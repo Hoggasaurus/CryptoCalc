@@ -1,6 +1,6 @@
 {
   "name": "Cryptographic Key Calculator",
-  "description": "A React application to generate and assemble 3DES & AES cryptographic keys with instant Key Check Value (KCV) calculations.",
+  "description": "A React application to generate and assemble 3DES & AES cryptographic keys, manage PIN blocks, generate RSA key pairs, perform symmetric data encryption/decryption, and convert data formats.",
   "requestFramePermissions": [],
   "prompt": ""
 }

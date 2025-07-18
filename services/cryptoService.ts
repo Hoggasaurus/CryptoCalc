@@ -1,5 +1,4 @@
-
-import { PinBlockFormat, RsaKeyFormat, RsaKeyPairResult, RsaKeySize } from '../types';
+import { PinBlockFormat, RsaKeyFormat, RsaKeyPairResult, RsaKeySize, DataEncryptionAlgorithm, EncryptionMode, Padding, EncryptionAction, DataFormat } from '../types';
 
 // This tells TypeScript that CryptoJS is a global variable from the imported script
 declare var CryptoJS: any;
@@ -293,4 +292,97 @@ export const generateRsaKeyPair = async (keySize: RsaKeySize, format: RsaKeyForm
     const privateKeyPem = formatAsPem(privateKeyBase64, 'PRIVATE');
     
     return { format: 'pem', publicKey: publicKeyPem, privateKey: privateKeyPem };
+};
+
+interface ProcessDataParams {
+    data: string;
+    keyHex: string;
+    ivHex?: string;
+    algorithm: DataEncryptionAlgorithm;
+    mode: EncryptionMode;
+    padding: Padding;
+    action: EncryptionAction;
+    inputFormat: DataFormat;
+    outputFormat: DataFormat;
+}
+
+/**
+ * Encrypts or decrypts data using AES or 3DES.
+ * @param params The parameters for the operation.
+ * @returns The processed data as a string.
+ */
+export const processData = ({ data, keyHex, ivHex, algorithm, mode, padding, action, inputFormat, outputFormat }: ProcessDataParams): string => {
+    try {
+        const key = CryptoJS.enc.Hex.parse(keyHex);
+        const iv = ivHex ? CryptoJS.enc.Hex.parse(ivHex) : undefined;
+
+        const modeMap = {
+            'ECB': CryptoJS.mode.ECB,
+            'CBC': CryptoJS.mode.CBC,
+        };
+
+        const paddingMap = {
+            'Pkcs7': CryptoJS.pad.Pkcs7,
+            'NoPadding': CryptoJS.pad.NoPadding,
+            'AnsiX923': CryptoJS.pad.AnsiX923,
+            'Iso10126': CryptoJS.pad.Iso10126,
+            'ZeroPadding': CryptoJS.pad.ZeroPadding,
+        };
+
+        const cipher = algorithm === 'AES' ? CryptoJS.AES : CryptoJS.TripleDES;
+        const config = {
+            iv: iv,
+            mode: modeMap[mode],
+            padding: paddingMap[padding],
+        };
+
+        if (action === 'encrypt') {
+            const dataToEncrypt = (inputFormat === 'Hex')
+                ? CryptoJS.enc.Hex.parse(data)
+                : data; // Pass string for Utf8
+
+            const encrypted = cipher.encrypt(dataToEncrypt, key, config);
+            
+            // Always return Hex. Base64 output is removed.
+            return encrypted.ciphertext.toString(CryptoJS.enc.Hex).toUpperCase();
+        } else { // decrypt
+             // Input for decryption is now always Hex. Base64 is no longer supported.
+            if (inputFormat !== 'Hex') {
+                throw new Error('Decryption input format must be Hex. Base64 is no longer supported for ciphertext.');
+            }
+            const ciphertext = { ciphertext: CryptoJS.enc.Hex.parse(data) };
+            
+            const decrypted = cipher.decrypt(ciphertext, key, config);
+            
+            // We still use UTF-8 for decoding as it correctly handles ASCII.
+            const outputEncoder = (outputFormat === 'Text')
+                ? CryptoJS.enc.Utf8
+                : CryptoJS.enc.Hex;
+
+            const decryptedText = decrypted.toString(outputEncoder);
+
+            if (decrypted.sigBytes === 0) {
+                 throw new Error("Decryption failed. This is often due to an incorrect key, IV, padding scheme, or data format.");
+            }
+            if (decrypted.sigBytes > 0 && !decryptedText && outputFormat === 'Text') {
+                throw new Error("Decryption resulted in non-printable UTF-8 data. Try decrypting to Hex format instead.");
+            }
+            
+            // New check: Ensure the output is valid ASCII if requested.
+            if (outputFormat === 'Text' && decryptedText) {
+                // eslint-disable-next-line no-control-regex
+                if (/[^\u0000-\u007F]/.test(decryptedText)) {
+                    throw new Error("Decryption resulted in non-ASCII characters. The original data may not have been plain ASCII text. Try decrypting to Hex format to view the raw bytes.");
+                }
+            }
+            
+            return (outputFormat === 'Hex') ? decryptedText.toUpperCase() : decryptedText;
+        }
+    } catch (e: any) {
+        console.error('Data processing error:', e);
+        if (e.message) {
+            throw e;
+        }
+        throw new Error('An unexpected error occurred during data processing.');
+    }
 };

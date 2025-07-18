@@ -53,3 +53,10 @@ export type RsaKeyPairResult =
     | { format: 'pem', publicKey: string, privateKey: string } 
     | { format: 'jwk', publicKey: JsonWebKey, privateKey: JsonWebKey }
     | { format: 'der', publicKey: string, privateKey: string };
+
+// --- Data Encryption Types ---
+export type DataEncryptionAlgorithm = 'AES' | '3DES';
+export type EncryptionMode = 'ECB' | 'CBC';
+export type Padding = 'Pkcs7' | 'NoPadding' | 'AnsiX923' | 'Iso10126' | 'ZeroPadding';
+export type EncryptionAction = 'encrypt' | 'decrypt';
+export type DataFormat = 'Text' | 'Hex';

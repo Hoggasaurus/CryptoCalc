@@ -10,8 +10,10 @@ import Tooltip from './components/Tooltip';
 import { Icon } from './components/Icon';
 import PinBlockGenerator from './components/PinBlockGenerator';
 import RsaGenerator from './components/RsaGenerator';
+import DataEncryptor from './components/DataEncryptor';
+import FormatConverter from './components/FormatConverter';
 
-type Tab = 'keys' | 'pinblocks' | 'rsa';
+type Tab = 'keys' | 'encryption' | 'pinblocks' | 'rsa' | 'converter';
 
 const TabButton: React.FC<{isActive: boolean, onClick: () => void, children: React.ReactNode}> = ({ isActive, onClick, children }) => (
     <button
@@ -52,19 +54,25 @@ const App: React.FC = () => {
             Cryptographic <span className="text-emerald-400">Utilities</span>
           </h1>
           <p className="mt-4 text-lg text-slate-400 max-w-3xl mx-auto">
-            A versatile toolkit for cryptographic key and PIN block management.
+            A versatile toolkit for cryptographic key management, PIN blocks, data encryption, and format conversion.
           </p>
         </header>
 
-        <div className="mb-8 border-b border-slate-700 flex justify-center">
+        <div className="mb-8 border-b border-slate-700 flex justify-center flex-wrap">
             <TabButton isActive={activeTab === 'keys'} onClick={() => setActiveTab('keys')}>
                 <Icon name="key" /> Key Calculator
+            </TabButton>
+            <TabButton isActive={activeTab === 'encryption'} onClick={() => setActiveTab('encryption')}>
+                <Icon name="lock-open" /> Data Encryption
             </TabButton>
             <TabButton isActive={activeTab === 'pinblocks'} onClick={() => setActiveTab('pinblocks')}>
                 <Icon name="shield-check" /> PIN Block Generator
             </TabButton>
             <TabButton isActive={activeTab === 'rsa'} onClick={() => setActiveTab('rsa')}>
                 <Icon name="lock-closed" /> RSA Key Pair
+            </TabButton>
+            <TabButton isActive={activeTab === 'converter'} onClick={() => setActiveTab('converter')}>
+                <Icon name="arrows-right-left" /> Format Converter
             </TabButton>
         </div>
 
@@ -120,6 +128,12 @@ const App: React.FC = () => {
           </main>
         )}
 
+        {activeTab === 'encryption' && (
+           <main className="animate-fade-in">
+              <DataEncryptor />
+           </main>
+        )}
+
         {activeTab === 'pinblocks' && (
            <main className="animate-fade-in">
               <PinBlockGenerator />
@@ -129,6 +143,12 @@ const App: React.FC = () => {
         {activeTab === 'rsa' && (
            <main className="animate-fade-in">
               <RsaGenerator />
+           </main>
+        )}
+        
+        {activeTab === 'converter' && (
+           <main className="animate-fade-in">
+              <FormatConverter />
            </main>
         )}
 
