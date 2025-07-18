@@ -1,4 +1,5 @@
-import { PinBlockFormat } from '../types';
+
+import { PinBlockFormat, RsaKeyFormat, RsaKeyPairResult, RsaKeySize } from '../types';
 
 // This tells TypeScript that CryptoJS is a global variable from the imported script
 declare var CryptoJS: any;
@@ -220,4 +221,76 @@ export const generatePinBlock = ({ pin, pan, pek, format }: PinBlockParams): { c
         clearPinBlock,
         encryptedPinBlock
     };
+};
+
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+};
+
+const arrayBufferToHex = (buffer: ArrayBuffer): string => {
+  return Array.from(new Uint8Array(buffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase();
+};
+
+const formatAsPem = (base64String: string, type: 'PUBLIC' | 'PRIVATE'): string => {
+    const header = `-----BEGIN ${type} KEY-----`;
+    const footer = `-----END ${type} KEY-----`;
+    const chunks = base64String.match(/.{1,64}/g) || [];
+    return `${header}\n${chunks.join('\n')}\n${footer}`;
+};
+
+/**
+ * Generates an RSA key pair using the Web Crypto API.
+ * @param keySize The size of the key in bits.
+ * @param format The desired output format ('pem', 'jwk', or 'der').
+ * @returns A promise that resolves to an object containing the keys in the specified format.
+ */
+export const generateRsaKeyPair = async (keySize: RsaKeySize, format: RsaKeyFormat): Promise<RsaKeyPairResult> => {
+    const keyPair = await window.crypto.subtle.generateKey(
+        {
+            name: 'RSA-OAEP',
+            modulusLength: keySize,
+            publicExponent: new Uint8Array([1, 0, 1]), // 65537
+            hash: 'SHA-256',
+        },
+        true, // Can be exported
+        ['encrypt', 'decrypt']
+    );
+
+    if (format === 'jwk') {
+        const [publicKey, privateKey] = await Promise.all([
+            window.crypto.subtle.exportKey('jwk', keyPair.publicKey),
+            window.crypto.subtle.exportKey('jwk', keyPair.privateKey)
+        ]);
+        return { format: 'jwk', publicKey, privateKey };
+    }
+
+    // For PEM and DER, we need the raw DER-encoded data
+    const [publicKeyDer, privateKeyDer] = await Promise.all([
+        window.crypto.subtle.exportKey('spki', keyPair.publicKey),
+        window.crypto.subtle.exportKey('pkcs8', keyPair.privateKey)
+    ]);
+
+    if (format === 'der') {
+        const publicKeyHex = arrayBufferToHex(publicKeyDer);
+        const privateKeyHex = arrayBufferToHex(privateKeyDer);
+        return { format: 'der', publicKey: publicKeyHex, privateKey: privateKeyHex };
+    }
+
+    // Default to PEM
+    const publicKeyBase64 = arrayBufferToBase64(publicKeyDer);
+    const privateKeyBase64 = arrayBufferToBase64(privateKeyDer);
+
+    const publicKeyPem = formatAsPem(publicKeyBase64, 'PUBLIC');
+    const privateKeyPem = formatAsPem(privateKeyBase64, 'PRIVATE');
+    
+    return { format: 'pem', publicKey: publicKeyPem, privateKey: privateKeyPem };
 };

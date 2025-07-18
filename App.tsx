@@ -9,8 +9,9 @@ import KeyAssembler from './components/KeyAssembler';
 import Tooltip from './components/Tooltip';
 import { Icon } from './components/Icon';
 import PinBlockGenerator from './components/PinBlockGenerator';
+import RsaGenerator from './components/RsaGenerator';
 
-type Tab = 'keys' | 'pinblocks';
+type Tab = 'keys' | 'pinblocks' | 'rsa';
 
 const TabButton: React.FC<{isActive: boolean, onClick: () => void, children: React.ReactNode}> = ({ isActive, onClick, children }) => (
     <button
@@ -61,6 +62,9 @@ const App: React.FC = () => {
             </TabButton>
             <TabButton isActive={activeTab === 'pinblocks'} onClick={() => setActiveTab('pinblocks')}>
                 <Icon name="shield-check" /> PIN Block Generator
+            </TabButton>
+            <TabButton isActive={activeTab === 'rsa'} onClick={() => setActiveTab('rsa')}>
+                <Icon name="lock-closed" /> RSA Key Pair
             </TabButton>
         </div>
 
@@ -119,6 +123,12 @@ const App: React.FC = () => {
         {activeTab === 'pinblocks' && (
            <main className="animate-fade-in">
               <PinBlockGenerator />
+           </main>
+        )}
+
+        {activeTab === 'rsa' && (
+           <main className="animate-fade-in">
+              <RsaGenerator />
            </main>
         )}
 

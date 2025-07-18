@@ -44,3 +44,12 @@ export enum PinBlockFormat {
     ISO_3 = 'ISO_3',
     ISO_4 = 'ISO_4',
 }
+
+// --- RSA Types ---
+export type RsaKeySize = 1024 | 2048 | 3072 | 4096;
+export type RsaKeyFormat = 'pem' | 'jwk' | 'der';
+
+export type RsaKeyPairResult = 
+    | { format: 'pem', publicKey: string, privateKey: string } 
+    | { format: 'jwk', publicKey: JsonWebKey, privateKey: JsonWebKey }
+    | { format: 'der', publicKey: string, privateKey: string };

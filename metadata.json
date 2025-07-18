@@ -1,5 +1,6 @@
 {
   "name": "Cryptographic Key Calculator",
   "description": "A React application to generate and assemble 3DES & AES cryptographic keys with instant Key Check Value (KCV) calculations.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "prompt": ""
 }
