@@ -1,4 +1,3 @@
-
 export interface KeyComponent {
   id: string;
   value: string; // Hex encoded
@@ -60,3 +59,10 @@ export type EncryptionMode = 'ECB' | 'CBC';
 export type Padding = 'Pkcs7' | 'NoPadding' | 'AnsiX923' | 'Iso10126' | 'ZeroPadding';
 export type EncryptionAction = 'encrypt' | 'decrypt';
 export type DataFormat = 'Text' | 'Hex';
+
+// --- Debug Types ---
+export interface LogEntry {
+  timestamp: string;
+  source: string;
+  message: string;
+}

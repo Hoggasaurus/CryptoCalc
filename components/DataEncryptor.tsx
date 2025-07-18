@@ -4,6 +4,7 @@ import { processData, generateRandomHex } from '../services/cryptoService';
 import Card from './Card';
 import Button from './Button';
 import { Icon } from './Icon';
+import { debugLogger } from '../services/debugLogger';
 
 const algorithmOptions: { value: DataEncryptionAlgorithm, label: string }[] = [
     { value: 'AES', label: 'AES (Advanced Encryption Standard)' },
@@ -32,8 +33,8 @@ const FormatSelector: React.FC<{
     <div>
         <label className={`block text-sm font-medium mb-1 ${disabled ? 'text-slate-500' : 'text-slate-300'}`}>{label}</label>
         <div className={`flex p-1 rounded-lg bg-slate-700/50 ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
-            <button onClick={() => onChange('Text')} disabled={disabled} className={`w-1/2 py-1 text-sm font-semibold rounded-md transition-colors ${value === 'Text' ? 'bg-slate-600 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-600/50'}`}>Text</button>
-            <button onClick={() => onChange('Hex')} disabled={disabled} className={`w-1/2 py-1 text-sm font-semibold rounded-md transition-colors ${value === 'Hex' ? 'bg-slate-600 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-600/50'}`}>Hex</button>
+            <button onClick={() => { if (!disabled) onChange('Text')}} disabled={disabled} className={`w-1/2 py-1 text-sm font-semibold rounded-md transition-colors ${value === 'Text' ? 'bg-slate-600 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-600/50'}`}>Text</button>
+            <button onClick={() => { if (!disabled) onChange('Hex')}} disabled={disabled} className={`w-1/2 py-1 text-sm font-semibold rounded-md transition-colors ${value === 'Hex' ? 'bg-slate-600 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-600/50'}`}>Hex</button>
         </div>
     </div>
 );
@@ -55,14 +56,17 @@ const DataEncryptor: React.FC = () => {
 
     const needsIV = mode === 'CBC';
 
-    // Update formats and clear data when switching between encrypt/decrypt
     React.useEffect(() => {
+        const source = 'DataEncryptor';
+        debugLogger.log(source, `Switched to ${action} mode.`);
         if (action === 'encrypt') {
             setInputFormat('Text');
             setOutputFormat('Hex');
+            debugLogger.log(source, `Set default formats: Input=Text, Output=Hex.`);
         } else {
             setInputFormat('Hex');
             setOutputFormat('Text');
+            debugLogger.log(source, `Set default formats: Input=Hex, Output=Text.`);
         }
         setInputText('');
         setOutputText('');
@@ -76,21 +80,27 @@ const DataEncryptor: React.FC = () => {
     }, [algorithm]);
 
     const handleGenerateRandom = (type: 'key' | 'iv') => {
+        const source = 'DataEncryptor';
         if (type === 'key') {
-            const keyLength = keyConfig.lengths[0] || 16; // Default to smallest valid key size
-            setKeyHex(generateRandomHex(keyLength).toUpperCase());
+            const keyLength = keyConfig.lengths[0] || 16;
+            const newKey = generateRandomHex(keyLength).toUpperCase();
+            setKeyHex(newKey);
+            debugLogger.log(source, `Generated random key (${keyLength} bytes): ${newKey}`);
         } else {
-            setIvHex(generateRandomHex(keyConfig.ivLength).toUpperCase());
+            const newIv = generateRandomHex(keyConfig.ivLength).toUpperCase();
+            setIvHex(newIv);
+            debugLogger.log(source, `Generated random IV (${keyConfig.ivLength} bytes): ${newIv}`);
         }
     };
 
     const handleProcess = useCallback(() => {
+        const source = 'DataEncryptor';
+        debugLogger.log(source, `--- Starting data ${action} process ---`);
         setError(null);
         setOutputText('');
         setLoading(true);
 
         try {
-            // Validation
             const keyByteLength = keyHex.length / 2;
             if (!keyConfig.lengths.includes(keyByteLength)) {
                 throw new Error(`Invalid key length. For ${algorithm}, key must be ${keyConfig.lengths.join(', ')} bytes long (${keyConfig.lengths.map(b=>b*2).join('/')} hex chars).`);
@@ -104,6 +114,7 @@ const DataEncryptor: React.FC = () => {
             if (!inputText) {
                  throw new Error(`Input data cannot be empty.`);
             }
+            debugLogger.log(source, `Validation passed.`);
 
             const result = processData({
                 data: inputText,
@@ -117,8 +128,11 @@ const DataEncryptor: React.FC = () => {
                 outputFormat
             });
             setOutputText(result);
+            debugLogger.log(source, `SUCCESS: Process completed.`);
         } catch (e: any) {
-            setError(e.message || 'An unexpected error occurred.');
+            const err = e.message || 'An unexpected error occurred.';
+            setError(err);
+            debugLogger.log(source, `ERROR: ${err}`);
         } finally {
             setLoading(false);
         }
@@ -128,7 +142,7 @@ const DataEncryptor: React.FC = () => {
         if (action === 'encrypt') {
             const inputContext = inputFormat === 'Text' ? 'a UTF-8 string' : 'a Hex string';
             return `Input is treated as ${inputContext}. Encrypted output will be Hex encoded.`;
-        } else { // decrypt
+        } else {
             const outputContext = outputFormat === 'Text' ? 'an ASCII string' : 'a Hex string';
             return `Input must be a Hex-encoded ciphertext. Decrypted output will be ${outputContext}.`;
         }
@@ -138,36 +152,49 @@ const DataEncryptor: React.FC = () => {
         <div className="max-w-4xl mx-auto">
             <Card title="Symmetric Data Encryption & Decryption">
                 <div className="p-6 space-y-6">
-                    {/* Action Toggle */}
                     <div className="flex justify-center p-1 rounded-lg bg-slate-700/50">
                         <button onClick={() => setAction('encrypt')} className={`w-1/2 py-2 text-sm font-semibold rounded-md transition-colors ${action === 'encrypt' ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:bg-slate-600/50'}`}>Encrypt</button>
                         <button onClick={() => setAction('decrypt')} className={`w-1/2 py-2 text-sm font-semibold rounded-md transition-colors ${action === 'decrypt' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-600/50'}`}>Decrypt</button>
                     </div>
 
-                    {/* Configuration Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <SelectControl label="Algorithm" value={algorithm} onChange={e => setAlgorithm(e.target.value as DataEncryptionAlgorithm)} options={algorithmOptions.map(o => ({...o, key: o.value}))} />
-                        <SelectControl label="Mode of Operation" value={mode} onChange={e => setMode(e.target.value as EncryptionMode)} options={modeOptions.map(o => ({...o, key: o.value}))} />
-                        <SelectControl label="Padding" value={padding} onChange={e => setPadding(e.target.value as Padding)} options={paddingOptions.map(o => ({...o, key: o.value}))} />
+                        <SelectControl label="Algorithm" value={algorithm} onChange={e => {
+                            const newAlgo = e.target.value as DataEncryptionAlgorithm;
+                            setAlgorithm(newAlgo);
+                            debugLogger.log('DataEncryptor', `Algorithm changed to ${newAlgo}`);
+                        }} options={algorithmOptions.map(o => ({...o, key: o.value}))} />
+                        <SelectControl label="Mode of Operation" value={mode} onChange={e => {
+                             const newMode = e.target.value as EncryptionMode;
+                             setMode(newMode);
+                             debugLogger.log('DataEncryptor', `Mode changed to ${newMode}`);
+                        }} options={modeOptions.map(o => ({...o, key: o.value}))} />
+                        <SelectControl label="Padding" value={padding} onChange={e => {
+                            const newPadding = e.target.value as Padding;
+                            setPadding(newPadding);
+                            debugLogger.log('DataEncryptor', `Padding changed to ${newPadding}`);
+                        }} options={paddingOptions.map(o => ({...o, key: o.value}))} />
                     </div>
                      <p className="text-xs text-slate-400 -mt-2">
                         {modeOptions.find(m => m.value === mode)?.description}
                     </p>
 
-                    {/* Key & IV Inputs */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <InputControl label="Key (Hex)" value={keyHex} onChange={e => setKeyHex(e.target.value.replace(/[^0-9a-fA-F]/g, ''))} placeholder={`${keyConfig.lengths.map(b=>b*2).join('/')}-char hex`} onGenerate={() => handleGenerateRandom('key')} />
                         {needsIV && <InputControl label="IV (Hex)" value={ivHex} onChange={e => setIvHex(e.target.value.replace(/[^0-9a-fA-F]/g, ''))} placeholder={`${keyConfig.ivLength*2}-char hex`} onGenerate={() => handleGenerateRandom('iv')} />}
                     </div>
 
-                    {/* Format Selectors */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-700/50">
-                        <FormatSelector label="Input Format" value={inputFormat} onChange={setInputFormat} disabled={action === 'decrypt'} />
-                        <FormatSelector label="Output Format" value={outputFormat} onChange={setOutputFormat} disabled={action === 'encrypt'} />
+                        <FormatSelector label="Input Format" value={inputFormat} onChange={(f) => {
+                            setInputFormat(f);
+                            debugLogger.log('DataEncryptor', `Input format changed to ${f}`);
+                        }} disabled={action === 'decrypt'} />
+                        <FormatSelector label="Output Format" value={outputFormat} onChange={(f) => {
+                             setOutputFormat(f);
+                             debugLogger.log('DataEncryptor', `Output format changed to ${f}`);
+                        }} disabled={action === 'encrypt'} />
                     </div>
                      <p className="text-xs text-slate-400 -mt-2">{formatHelperText}</p>
 
-                    {/* Data Inputs */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-1">Input Data</label>
                         <textarea value={inputText} onChange={e => setInputText(e.target.value)} rows={5} className="w-full bg-slate-700 border border-slate-600 rounded-md shadow-sm py-2 px-3 text-white font-mono focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm" placeholder={action === 'encrypt' ? 'Enter text to encrypt...' : 'Enter ciphertext to decrypt...'} />
@@ -184,7 +211,10 @@ const DataEncryptor: React.FC = () => {
                     <div className="p-6 border-t border-slate-700 space-y-2 animate-fade-in">
                         <div className="flex justify-between items-center">
                             <h3 className="text-lg font-semibold text-emerald-400">Output Data</h3>
-                             <Button onClick={() => navigator.clipboard.writeText(outputText)} className="!px-3 !py-1 !text-xs">
+                             <Button onClick={() => {
+                                 navigator.clipboard.writeText(outputText);
+                                 debugLogger.log('DataEncryptor', 'Copied output to clipboard.');
+                             }} className="!px-3 !py-1 !text-xs">
                                 <Icon name="copy" className="w-4 h-4 mr-1" /> Copy
                             </Button>
                         </div>
@@ -196,7 +226,6 @@ const DataEncryptor: React.FC = () => {
     );
 };
 
-// Helper components for form controls
 const SelectControl: React.FC<{label: string, value: string, onChange: React.ChangeEventHandler<HTMLSelectElement>, options: {key: string, value: string, label: string}[]}> = ({label, value, onChange, options}) => (
     <div>
         <label className="block text-sm font-medium text-slate-300">{label}</label>

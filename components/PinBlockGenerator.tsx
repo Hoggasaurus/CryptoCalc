@@ -6,6 +6,7 @@ import Button from './Button';
 import ResultDisplay from './ResultDisplay';
 import { Icon } from './Icon';
 import Tooltip from './Tooltip';
+import { debugLogger } from '../services/debugLogger';
 
 const FormatsInfo: Record<PinBlockFormat, {name: string, description: string}> = {
     [PinBlockFormat.ISO_0]: {
@@ -33,56 +34,73 @@ const PinBlockGenerator: React.FC = () => {
     const isAES = format === PinBlockFormat.ISO_4;
 
     const handleGenerate = useCallback(() => {
+        const source = 'PinBlockGenerator';
+        debugLogger.log(source, `--- Starting PIN Block Generation ---`);
+        debugLogger.log(source, `Selected Format: ${format} (${FormatsInfo[format].name})`);
+        debugLogger.log(source, `PIN: ${pin}, PAN: ${pan}, PEK: ${pek ? '*'.repeat(pek.length) : 'Not Provided'}`);
+
         setError(null);
         setResult(null);
 
-        // Basic validation
         if (pin.length < 4 || pin.length > 12) {
-            setError('PIN must be between 4 and 12 digits.');
+            const err = 'PIN must be between 4 and 12 digits.';
+            setError(err);
+            debugLogger.log(source, `Validation FAILED: ${err}`);
             return;
         }
-        if (pan.length < 12 || pan.length > 19) { // ISO Format 4 has stricter PAN length
-            setError('PAN must be between 12 and 19 digits.');
+        if (pan.length < 12 || pan.length > 19) {
+            const err = 'PAN must be between 12 and 19 digits.';
+            setError(err);
+            debugLogger.log(source, `Validation FAILED: ${err}`);
             return;
         }
         
         if (isAES && !pek) {
-            setError('An AES PEK is required for ISO Format 4 generation.');
+            const err = 'An AES PEK is required for ISO Format 4 generation.';
+            setError(err);
+            debugLogger.log(source, `Validation FAILED: ${err}`);
             return;
         }
 
         try {
             if (pek) {
-                // PEK validation based on format
                 if (isAES) {
                     if (![32, 48, 64].includes(pek.length)) {
-                        setError('For ISO Format 4, PEK must be a 16, 24, or 32-byte AES key (32, 48, or 64 hex characters).');
+                        const err = 'For ISO Format 4, PEK must be a 16, 24, or 32-byte AES key (32, 48, or 64 hex characters).';
+                        setError(err);
+                        debugLogger.log(source, `Validation FAILED: ${err}`);
                         return;
                     }
-                } else { // ISO_0 or ISO_3
+                } else {
                     if (![32, 48].includes(pek.length)) {
-                        setError('For ISO Format 0/3, PEK must be a 16 or 24-byte 3DES key (32 or 48 hex characters).');
+                        const err = 'For ISO Format 0/3, PEK must be a 16 or 24-byte 3DES key (32 or 48 hex characters).';
+                        setError(err);
+                        debugLogger.log(source, `Validation FAILED: ${err}`);
                         return;
                     }
                 }
-
+                debugLogger.log(source, `PEK length (${pek.length}) is valid for selected format.`);
                 const generated = generatePinBlock({ pin, pan, pek, format });
                 setResult(generated);
+                debugLogger.log(source, `SUCCESS: Encrypted PIN block generated.`);
             } else {
-                // This branch is now only for ISO_0 and ISO_3
+                debugLogger.log(source, `PEK not provided. Generating clear PIN block only.`);
                 const clearBlock = generateClearPinBlock({ pin, pan, format });
                 setResult({ clearPinBlock: clearBlock, encryptedPinBlock: '' });
+                debugLogger.log(source, `SUCCESS: Clear PIN block generated.`);
             }
         } catch (e: any) {
             setError(e.message || 'An unexpected error occurred during PIN block generation.');
+            debugLogger.log(source, `ERROR: ${e.message}`);
         }
 
     }, [pin, pan, pek, format, isAES]);
 
     const handleGenerateRandomPek = useCallback(() => {
-        const byteLength = isAES ? 32 : 16; // Default to a strong AES-256 or standard 3DES 2-Key
+        const byteLength = isAES ? 32 : 16;
         const randomPek = generateRandomHex(byteLength);
         setPek(randomPek.toUpperCase());
+        debugLogger.log('PinBlockGenerator', `Generated random ${byteLength}-byte PEK.`);
     }, [isAES]);
 
     return (
@@ -150,7 +168,11 @@ const PinBlockGenerator: React.FC = () => {
                             <select
                                 id="format-select"
                                 value={format}
-                                onChange={(e) => setFormat(e.target.value as PinBlockFormat)}
+                                onChange={(e) => {
+                                    const newFormat = e.target.value as PinBlockFormat;
+                                    setFormat(newFormat);
+                                    debugLogger.log('PinBlockGenerator', `Format changed to ${newFormat}.`);
+                                }}
                                 className="w-full appearance-none bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                             >
                                 {Object.entries(FormatsInfo).map(([key, value]) => (

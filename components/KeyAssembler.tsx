@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Algorithm, KeyComponent } from '../types';
 import { KEY_ALGORITHMS } from '../constants';
@@ -7,6 +6,7 @@ import Card from './Card';
 import Button from './Button';
 import ResultDisplay from './ResultDisplay';
 import { Icon } from './Icon';
+import { debugLogger } from '../services/debugLogger';
 
 interface KeyAssemblerProps {
   availableComponents: KeyComponent[];
@@ -21,10 +21,11 @@ const KeyAssembler: React.FC<KeyAssemblerProps> = ({ availableComponents }) => {
   const config = KEY_ALGORITHMS[selectedAlgorithm];
 
   useEffect(() => {
+    debugLogger.log('KeyAssembler', `Algorithm changed to: ${config.name}. Resetting inputs for ${config.componentCount} component(s).`);
     setComponentInputs(Array(config.componentCount).fill(''));
     setAssembledKey(null);
     setError(null);
-  }, [selectedAlgorithm, config.componentCount]);
+  }, [selectedAlgorithm, config.componentCount, config.name]);
 
   const handleInputChange = (index: number, value: string) => {
     const newInputs = [...componentInputs];
@@ -35,15 +36,23 @@ const KeyAssembler: React.FC<KeyAssemblerProps> = ({ availableComponents }) => {
   };
   
   const handlePasteLastGenerated = (index: number) => {
+    const source = 'KeyAssembler';
     if (availableComponents.length > 0) {
         const requiredLength = config.componentLengthBytes * 2;
         const lastComponentValue = availableComponents[0].value;
         const valueToPaste = lastComponentValue.substring(0, requiredLength);
+        debugLogger.log(source, `Pasting last generated component into input ${index + 1}. Value: ${valueToPaste}`);
         handleInputChange(index, valueToPaste);
+    } else {
+        debugLogger.log(source, 'Paste button clicked, but no generated components are available.');
     }
   };
 
   const handleAssemble = useCallback(() => {
+    const source = 'KeyAssembler';
+    debugLogger.log(source, `Attempting to assemble key with algorithm: ${config.name}`);
+    debugLogger.log(source, `Inputs: ${JSON.stringify(componentInputs)}`);
+
     setError(null);
     const requiredLength = config.componentLengthBytes * 2;
     const componentsToProcess: string[] = [];
@@ -51,22 +60,30 @@ const KeyAssembler: React.FC<KeyAssemblerProps> = ({ availableComponents }) => {
     for (let i = 0; i < config.componentCount; i++) {
       const input = componentInputs[i];
       if (input.length !== requiredLength) {
-        setError(`Component ${i + 1} must be ${requiredLength} hex characters long.`);
+        const errorMsg = `Component ${i + 1} must be ${requiredLength} hex characters long.`;
+        setError(errorMsg);
+        debugLogger.log(source, `Validation FAILED: ${errorMsg}`);
         return;
       }
       componentsToProcess.push(input);
     }
     
+    debugLogger.log(source, 'All components passed validation.');
     const finalKeyHex = (config.componentCount > 1)
       ? xorHexStrings(componentsToProcess)
       : componentsToProcess[0];
 
     if (finalKeyHex === 'Error') {
-        setError('An error occurred during the XOR operation. Check component lengths.');
+        const errorMsg = 'An error occurred during the XOR operation. Check component lengths.';
+        setError(errorMsg);
+        debugLogger.log(source, `ERROR: ${errorMsg}`);
         return;
     }
 
+    debugLogger.log(source, `Successfully assembled key: ${finalKeyHex.toUpperCase()}`);
+
     const kcv = calculateKcv({ keyHex: finalKeyHex, algorithm: config.kcvType });
+    debugLogger.log(source, `Calculated final KCV: ${kcv}`);
     setAssembledKey({ value: finalKeyHex.toUpperCase(), kcv });
 
   }, [componentInputs, config]);

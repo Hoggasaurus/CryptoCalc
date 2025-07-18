@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import { KeyComponent } from './types';
 import { generateRandomHex, calculateKcv } from './services/cryptoService';
@@ -12,6 +11,9 @@ import PinBlockGenerator from './components/PinBlockGenerator';
 import RsaGenerator from './components/RsaGenerator';
 import DataEncryptor from './components/DataEncryptor';
 import FormatConverter from './components/FormatConverter';
+import { useDebug } from './contexts/DebugContext';
+import DebugLog from './components/DebugLog';
+import { debugLogger } from './services/debugLogger';
 
 type Tab = 'keys' | 'encryption' | 'pinblocks' | 'rsa' | 'converter';
 
@@ -32,10 +34,20 @@ const TabButton: React.FC<{isActive: boolean, onClick: () => void, children: Rea
 const App: React.FC = () => {
   const [components, setComponents] = useState<KeyComponent[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>('keys');
+  const { isDebugMode, setDebugMode, clearLogs } = useDebug();
+
+  const handleTabChange = useCallback((tab: Tab) => {
+      setActiveTab(tab);
+      clearLogs();
+  }, [clearLogs]);
 
   const handleGenerateComponent = useCallback((kcvType: 'AES' | '3DES', bytesToGenerate: number) => {
+    const source = 'KeyComponentGenerator';
+    debugLogger.log(source, `Generating ${bytesToGenerate}-byte component for ${kcvType}.`);
     const value = generateRandomHex(bytesToGenerate);
     const kcv = calculateKcv({ keyHex: value, algorithm: kcvType });
+    debugLogger.log(source, `Generated component value: ${value}`);
+    debugLogger.log(source, `Calculated KCV: ${kcv}`);
     
     const newComponent: KeyComponent = {
       id: `comp-${Date.now()}-${Math.random()}`,
@@ -59,19 +71,19 @@ const App: React.FC = () => {
         </header>
 
         <div className="mb-8 border-b border-slate-700 flex justify-center flex-wrap">
-            <TabButton isActive={activeTab === 'keys'} onClick={() => setActiveTab('keys')}>
+            <TabButton isActive={activeTab === 'keys'} onClick={() => handleTabChange('keys')}>
                 <Icon name="key" /> Key Calculator
             </TabButton>
-            <TabButton isActive={activeTab === 'encryption'} onClick={() => setActiveTab('encryption')}>
+            <TabButton isActive={activeTab === 'encryption'} onClick={() => handleTabChange('encryption')}>
                 <Icon name="lock-open" /> Data Encryption
             </TabButton>
-            <TabButton isActive={activeTab === 'pinblocks'} onClick={() => setActiveTab('pinblocks')}>
+            <TabButton isActive={activeTab === 'pinblocks'} onClick={() => handleTabChange('pinblocks')}>
                 <Icon name="shield-check" /> PIN Block Generator
             </TabButton>
-            <TabButton isActive={activeTab === 'rsa'} onClick={() => setActiveTab('rsa')}>
+            <TabButton isActive={activeTab === 'rsa'} onClick={() => handleTabChange('rsa')}>
                 <Icon name="lock-closed" /> RSA Key Pair
             </TabButton>
-            <TabButton isActive={activeTab === 'converter'} onClick={() => setActiveTab('converter')}>
+            <TabButton isActive={activeTab === 'converter'} onClick={() => handleTabChange('converter')}>
                 <Icon name="arrows-right-left" /> Format Converter
             </TabButton>
         </div>
@@ -152,8 +164,19 @@ const App: React.FC = () => {
            </main>
         )}
 
+        <DebugLog />
 
         <footer className="text-center mt-12 text-slate-500 text-sm">
+           <div className="flex justify-center items-center gap-2 mb-4">
+              <input 
+                  type="checkbox" 
+                  id="debug-toggle" 
+                  checked={isDebugMode} 
+                  onChange={(e) => setDebugMode(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-900"
+              />
+              <label htmlFor="debug-toggle" className="text-slate-400 cursor-pointer">Show Debug Log</label>
+          </div>
           <p>Built by a world-class senior frontend React engineer.</p>
           <p>&copy; {new Date().getFullYear()}. All Rights Reserved.</p>
         </footer>

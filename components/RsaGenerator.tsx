@@ -1,10 +1,10 @@
-
 import React, { useState, useCallback } from 'react';
 import { generateRsaKeyPair } from '../services/cryptoService';
 import { RsaKeySize, RsaKeyFormat, RsaKeyPairResult } from '../types';
 import Card from './Card';
 import Button from './Button';
 import { Icon } from './Icon';
+import { debugLogger } from '../services/debugLogger';
 
 const keySizes: RsaKeySize[] = [1024, 2048, 3072, 4096];
 const keyFormats: { value: RsaKeyFormat; label: string; description: string }[] = [
@@ -21,9 +21,10 @@ const KeyDisplay: React.FC<{ label: string; value: string }> = ({ label, value }
     if (value) {
       navigator.clipboard.writeText(value);
       setCopied(true);
+      debugLogger.log('RsaGenerator', `Copied ${label} to clipboard.`);
       setTimeout(() => setCopied(false), 2000);
     }
-  }, [value]);
+  }, [value, label]);
 
   return (
     <div>
@@ -58,14 +59,20 @@ const RsaGenerator: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
 
     const handleGenerate = useCallback(async () => {
+        const source = 'RsaGenerator';
+        debugLogger.log(source, `--- Starting RSA Key Pair Generation ---`);
+        debugLogger.log(source, `Requested Size: ${keySize}-bit, Format: ${keyFormat.toUpperCase()}`);
         setLoading(true);
         setError(null);
         setKeys(null);
         try {
             const result = await generateRsaKeyPair(keySize, keyFormat);
             setKeys(result);
+            debugLogger.log(source, `SUCCESS: Key pair generated successfully.`);
         } catch (e: any) {
-            setError(e.message || 'Failed to generate key pair. Your browser might not support the Web Crypto API.');
+            const err = e.message || 'Failed to generate key pair. Your browser might not support the Web Crypto API.';
+            setError(err);
+            debugLogger.log(source, `ERROR: ${err}`);
             console.error(e);
         } finally {
             setLoading(false);
@@ -109,7 +116,11 @@ const RsaGenerator: React.FC = () => {
                                 <select
                                     id="keysize-select"
                                     value={keySize}
-                                    onChange={(e) => setKeySize(parseInt(e.target.value, 10) as RsaKeySize)}
+                                    onChange={(e) => {
+                                        const newSize = parseInt(e.target.value, 10) as RsaKeySize;
+                                        setKeySize(newSize);
+                                        debugLogger.log('RsaGenerator', `Key size changed to ${newSize}-bit.`);
+                                    }}
                                     disabled={loading}
                                     className="w-full appearance-none bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:opacity-50"
                                 >
@@ -130,7 +141,11 @@ const RsaGenerator: React.FC = () => {
                                 <select
                                     id="keyformat-select"
                                     value={keyFormat}
-                                    onChange={(e) => setKeyFormat(e.target.value as RsaKeyFormat)}
+                                    onChange={(e) => {
+                                        const newFormat = e.target.value as RsaKeyFormat;
+                                        setKeyFormat(newFormat);
+                                        debugLogger.log('RsaGenerator', `Key format changed to ${newFormat.toUpperCase()}.`);
+                                    }}
                                     disabled={loading}
                                     className="w-full appearance-none bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:opacity-50"
                                 >

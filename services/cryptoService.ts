@@ -1,4 +1,5 @@
 import { PinBlockFormat, RsaKeyFormat, RsaKeyPairResult, RsaKeySize, DataEncryptionAlgorithm, EncryptionMode, Padding, EncryptionAction, DataFormat } from '../types';
+import { debugLogger } from './debugLogger';
 
 // This tells TypeScript that CryptoJS is a global variable from the imported script
 declare var CryptoJS: any;
@@ -9,9 +10,13 @@ declare var CryptoJS: any;
  * @returns A hex-encoded string.
  */
 export const generateRandomHex = (bytes: number): string => {
+  const source = 'generateRandomHex';
+  debugLogger.log(source, `Requesting ${bytes} random bytes.`);
   const buffer = new Uint8Array(bytes);
   window.crypto.getRandomValues(buffer);
-  return Array.from(buffer, byte => byte.toString(16).padStart(2, '0')).join('');
+  const hex = Array.from(buffer, byte => byte.toString(16).padStart(2, '0')).join('');
+  debugLogger.log(source, `Generated ${bytes} bytes as hex: ${hex.toUpperCase()}`);
+  return hex;
 };
 
 /**
@@ -20,10 +25,16 @@ export const generateRandomHex = (bytes: number): string => {
  * @returns The XORed result as a hex string.
  */
 export const xorHexStrings = (hexStrings: string[]): string => {
+    const source = 'xorHexStrings';
+    debugLogger.log(source, `Performing XOR on ${hexStrings.length} components.`);
     if (!hexStrings || hexStrings.length === 0) {
+        debugLogger.log(source, 'Input array is empty, returning empty string.');
         return '';
     }
+    hexStrings.forEach((s, i) => debugLogger.log(source, `Input ${i + 1}: ${s}`));
+
     if (hexStrings.length === 1) {
+        debugLogger.log(source, 'Only one component, returning it directly.');
         return hexStrings[0];
     }
 
@@ -35,7 +46,6 @@ export const xorHexStrings = (hexStrings: string[]): string => {
             const next = C(hexStrings[i]);
             // Ensure word arrays have the same length for XOR
             if (result.words.length !== next.words.length) {
-                // Pad the shorter one if necessary
                 const shorter = result.words.length < next.words.length ? result : next;
                 const longer = result.words.length > next.words.length ? result : next;
                 while (shorter.words.length < longer.words.length) {
@@ -46,8 +56,11 @@ export const xorHexStrings = (hexStrings: string[]): string => {
                 result.words[j] ^= next.words[j];
             }
         }
-        return result.toString(CryptoJS.enc.Hex);
+        const resultHex = result.toString(CryptoJS.enc.Hex);
+        debugLogger.log(source, `XOR result: ${resultHex.toUpperCase()}`);
+        return resultHex;
     } catch (error) {
+        debugLogger.log(source, `ERROR: XOR operation failed. ${error}`);
         console.error("XOR operation failed:", error);
         return 'Error';
     }
@@ -64,14 +77,18 @@ interface KcvParams {
  * @returns The 3-byte KCV as a hex string.
  */
 export const calculateKcv = ({ keyHex, algorithm }: KcvParams): string => {
-    if (!keyHex) return '';
+    const source = 'calculateKcv';
+    debugLogger.log(source, `Calculating ${algorithm} KCV for key: ${keyHex.toUpperCase()}`);
+    if (!keyHex) {
+        debugLogger.log(source, 'Key is empty, returning empty string.');
+        return '';
+    }
 
     try {
         let keyForKcv = keyHex;
-        // A 3DES key component is 8 bytes (16 hex chars). To calculate a KCV,
-        // it's common to form a 2-Key 3DES key by duplicating the component.
         if (algorithm === '3DES' && keyHex.length === 16) { 
             keyForKcv = keyHex + keyHex;
+            debugLogger.log(source, `Detected 8-byte 3DES component. Duplicating to 16-byte key for KCV: ${keyForKcv.toUpperCase()}`);
         }
         
         const key = CryptoJS.enc.Hex.parse(keyForKcv);
@@ -81,19 +98,26 @@ export const calculateKcv = ({ keyHex, algorithm }: KcvParams): string => {
         if (algorithm === '3DES') {
             zeroBlock = CryptoJS.enc.Hex.parse('0000000000000000');
             encryptor = CryptoJS.TripleDES;
+            debugLogger.log(source, 'Using 3DES with an 8-byte zero block for encryption.');
         } else { // AES
             zeroBlock = CryptoJS.enc.Hex.parse('00000000000000000000000000000000');
             encryptor = CryptoJS.AES;
+            debugLogger.log(source, 'Using AES with a 16-byte zero block for encryption.');
         }
 
         const encrypted = encryptor.encrypt(zeroBlock, key, {
             mode: CryptoJS.mode.ECB,
             padding: CryptoJS.pad.NoPadding
         });
+        debugLogger.log(source, `Encrypted zero block using ECB mode, NoPadding.`);
 
         const ciphertextHex = encrypted.ciphertext.toString(CryptoJS.enc.Hex);
-        return ciphertextHex.substring(0, 6).toUpperCase();
-    } catch (error) {
+        debugLogger.log(source, `Full encryption result (ciphertext): ${ciphertextHex.toUpperCase()}`);
+        const kcv = ciphertextHex.substring(0, 6).toUpperCase();
+        debugLogger.log(source, `Extracted first 3 bytes for KCV: ${kcv}`);
+        return kcv;
+    } catch (error: any) {
+        debugLogger.log(source, `ERROR: KCV calculation failed. ${error.message}`);
         console.error("KCV calculation failed:", error);
         return 'Error';
     }
@@ -110,31 +134,41 @@ interface ClearPinBlockParams {
  * @returns The clear PIN block as a hex string.
  */
 export const generateClearPinBlock = ({ pin, pan, format }: ClearPinBlockParams): string => {
+    const source = 'generateClearPinBlock';
+    debugLogger.log(source, `Generating clear PIN block for format ${format}.`);
     if (format === PinBlockFormat.ISO_4) {
-        throw new Error("ISO Format 4 generation requires a PEK and does not produce a simple clear block. Use generatePinBlock.");
+        const err = "ISO Format 4 generation requires a PEK and does not produce a simple clear block. Use generatePinBlock.";
+        debugLogger.log(source, `ERROR: ${err}`);
+        throw new Error(err);
     }
     
     let pinPart: string;
 
     const pinLen = pin.length;
     const pinLenHex = pinLen.toString(16);
+    debugLogger.log(source, `PIN: ${pin}, Length: ${pinLen} (0x${pinLenHex})`);
 
     if (format === PinBlockFormat.ISO_0) {
         pinPart = '0' + pinLenHex + pin + 'F'.repeat(14 - pinLen);
+        debugLogger.log(source, `Formatted PIN Block (ISO 0): ${pinPart}`);
     } else { // ISO_3
         const randomPadding = generateRandomHex(Math.ceil((14 - pinLen) / 2)).substring(0, 14 - pinLen);
         pinPart = '3' + pinLenHex + pin + randomPadding;
+        debugLogger.log(source, `Formatted PIN Block (ISO 3) with random padding '${randomPadding}': ${pinPart}`);
     }
     
-    // For ISO 0/3, the PAN part is the 12 rightmost digits of the PAN (sans check digit), prefixed with 0000.
     const panDigits = pan.substring(pan.length - 13, pan.length - 1);
     const panPart = '0000' + panDigits;
+    debugLogger.log(source, `PAN: ${pan}, Formatted PAN Block: ${panPart}`);
     
     const clearPinBlock = xorHexStrings([pinPart, panPart]);
     if (clearPinBlock === 'Error') {
-        throw new Error('Failed to XOR PIN and PAN blocks.');
+        const err = 'Failed to XOR PIN and PAN blocks.';
+        debugLogger.log(source, `ERROR: ${err}`);
+        throw new Error(err);
     }
     
+    debugLogger.log(source, `Final Clear PIN Block: ${clearPinBlock.toUpperCase()}`);
     return clearPinBlock.toUpperCase();
 };
 
@@ -150,17 +184,18 @@ interface PinBlockParams {
  * @returns An object containing the clear (or intermediate) and encrypted PIN blocks.
  */
 export const generatePinBlock = ({ pin, pan, pek, format }: PinBlockParams): { clearPinBlock: string; encryptedPinBlock: string; } => {
+    const source = 'generatePinBlock';
+    debugLogger.log(source, `Starting encrypted PIN Block generation for format ${format}.`);
+    debugLogger.log(source, `PEK provided: ${'*'.repeat(pek.length)}`);
     
     if (format === PinBlockFormat.ISO_4) {
-        // Implements ISO 9564-1 Format 4 (also known as "Format 48") using an Encrypt-XOR-Encrypt scheme.
-
-        // 1. Construct Plaintext PIN Field (Block A)
-        const pinPrefix = '4' + pin.length.toString(16); // Control '4' + PIN length
-        const pinAndFill = pin.padEnd(14, 'A'); // PIN followed by fill character 'A' to 14 nibbles
-        const randomPart = generateRandomHex(8); // 16 random nibbles
+        debugLogger.log(source, 'Using ISO 4 (Encrypt-XOR-Encrypt) scheme with AES.');
+        const pinPrefix = '4' + pin.length.toString(16);
+        const pinAndFill = pin.padEnd(14, 'A');
+        const randomPart = generateRandomHex(8);
         const pinField = (pinPrefix + pinAndFill + randomPart).toUpperCase();
+        debugLogger.log(source, `1. Constructed Plaintext PIN Field (Block A): ${pinField}`);
 
-        // 2. Construct Plaintext PAN Field (Block B)
         let panForBlock = pan;
         let panLen = panForBlock.length;
         if (panLen < 12) {
@@ -171,40 +206,42 @@ export const generatePinBlock = ({ pin, pan, pek, format }: PinBlockParams): { c
         const mHex = mVal.toString(16);
         const panFieldData = mHex + panForBlock;
         const panField = panFieldData.padEnd(32, '0').toUpperCase();
+        debugLogger.log(source, `2. Constructed Plaintext PAN Field (Block B): ${panField}`);
 
-        // Prepare for encryption
         const key = CryptoJS.enc.Hex.parse(pek);
         const pinFieldWords = CryptoJS.enc.Hex.parse(pinField);
 
-        // 3. Encrypt the plaintext PIN field
+        debugLogger.log(source, '3. Encrypting PIN Field with PEK...');
         const encryptedPinFieldResult = CryptoJS.AES.encrypt(pinFieldWords, key, {
             mode: CryptoJS.mode.ECB,
             padding: CryptoJS.pad.NoPadding
         });
         const encryptedPinFieldHex = encryptedPinFieldResult.ciphertext.toString(CryptoJS.enc.Hex);
+        debugLogger.log(source, `   - Result: ${encryptedPinFieldHex.toUpperCase()}`);
         
-        // 4. XOR the plaintext PAN field with the result of step 3
+        debugLogger.log(source, '4. XORing PAN Field with encrypted PIN field...');
         const xorResultHex = xorHexStrings([panField, encryptedPinFieldHex]);
-        if (xorResultHex === 'Error') {
-            throw new Error('Failed to XOR PAN field and encrypted PIN field.');
-        }
+        if (xorResultHex === 'Error') { throw new Error('Failed to XOR PAN field and encrypted PIN field.'); }
         const xorResultWords = CryptoJS.enc.Hex.parse(xorResultHex);
 
-        // 5. Encrypt the result of step 4
+        debugLogger.log(source, '5. Encrypting result of step 4 with PEK...');
         const finalEncryptedResult = CryptoJS.AES.encrypt(xorResultWords, key, {
             mode: CryptoJS.mode.ECB,
             padding: CryptoJS.pad.NoPadding
         });
         const finalEncryptedPinBlock = finalEncryptedResult.ciphertext.toString(CryptoJS.enc.Hex).toUpperCase();
+        debugLogger.log(source, `   - Final Encrypted PIN Block: ${finalEncryptedPinBlock}`);
 
         return {
-            clearPinBlock: pinField, // For display, show the intermediate Plaintext PIN field
+            clearPinBlock: pinField,
             encryptedPinBlock: finalEncryptedPinBlock
         };
     }
 
     // --- Logic for ISO Format 0 and 3 ---
+    debugLogger.log(source, `Using ISO 0/3 scheme with 3DES.`);
     const clearPinBlock = generateClearPinBlock({ pin, pan, format });
+    debugLogger.log(source, `Encrypting clear block with PEK...`);
 
     const key = CryptoJS.enc.Hex.parse(pek);
     const data = CryptoJS.enc.Hex.parse(clearPinBlock);
@@ -215,6 +252,7 @@ export const generatePinBlock = ({ pin, pan, pek, format }: PinBlockParams): { c
     });
 
     const encryptedPinBlock = encrypted.ciphertext.toString(CryptoJS.enc.Hex).toUpperCase();
+    debugLogger.log(source, `Final Encrypted PIN Block: ${encryptedPinBlock}`);
     
     return {
         clearPinBlock,
@@ -253,6 +291,9 @@ const formatAsPem = (base64String: string, type: 'PUBLIC' | 'PRIVATE'): string =
  * @returns A promise that resolves to an object containing the keys in the specified format.
  */
 export const generateRsaKeyPair = async (keySize: RsaKeySize, format: RsaKeyFormat): Promise<RsaKeyPairResult> => {
+    const source = 'generateRsaKeyPair';
+    debugLogger.log(source, `Generating ${keySize}-bit RSA key pair in ${format.toUpperCase()} format.`);
+    debugLogger.log(source, `Using Web Crypto API with RSA-OAEP and SHA-256.`);
     const keyPair = await window.crypto.subtle.generateKey(
         {
             name: 'RSA-OAEP',
@@ -263,33 +304,39 @@ export const generateRsaKeyPair = async (keySize: RsaKeySize, format: RsaKeyForm
         true, // Can be exported
         ['encrypt', 'decrypt']
     );
+    debugLogger.log(source, 'Successfully generated CryptoKeyPair.');
 
     if (format === 'jwk') {
+        debugLogger.log(source, 'Exporting keys to JWK format.');
         const [publicKey, privateKey] = await Promise.all([
             window.crypto.subtle.exportKey('jwk', keyPair.publicKey),
             window.crypto.subtle.exportKey('jwk', keyPair.privateKey)
         ]);
+        debugLogger.log(source, 'Export successful.');
         return { format: 'jwk', publicKey, privateKey };
     }
 
-    // For PEM and DER, we need the raw DER-encoded data
+    debugLogger.log(source, 'Exporting keys to DER format (SPKI for public, PKCS#8 for private).');
     const [publicKeyDer, privateKeyDer] = await Promise.all([
         window.crypto.subtle.exportKey('spki', keyPair.publicKey),
         window.crypto.subtle.exportKey('pkcs8', keyPair.privateKey)
     ]);
 
     if (format === 'der') {
+        debugLogger.log(source, 'Converting DER ArrayBuffers to Hex strings.');
         const publicKeyHex = arrayBufferToHex(publicKeyDer);
         const privateKeyHex = arrayBufferToHex(privateKeyDer);
+        debugLogger.log(source, 'Hex conversion successful.');
         return { format: 'der', publicKey: publicKeyHex, privateKey: privateKeyHex };
     }
 
-    // Default to PEM
+    debugLogger.log(source, 'Converting DER ArrayBuffers to Base64, then formatting as PEM.');
     const publicKeyBase64 = arrayBufferToBase64(publicKeyDer);
     const privateKeyBase64 = arrayBufferToBase64(privateKeyDer);
 
     const publicKeyPem = formatAsPem(publicKeyBase64, 'PUBLIC');
     const privateKeyPem = formatAsPem(privateKeyBase64, 'PRIVATE');
+    debugLogger.log(source, 'PEM formatting successful.');
     
     return { format: 'pem', publicKey: publicKeyPem, privateKey: privateKeyPem };
 };
@@ -312,52 +359,48 @@ interface ProcessDataParams {
  * @returns The processed data as a string.
  */
 export const processData = ({ data, keyHex, ivHex, algorithm, mode, padding, action, inputFormat, outputFormat }: ProcessDataParams): string => {
+    const source = 'processData';
+    debugLogger.log(source, `Starting ${action} process.`);
+    debugLogger.log(source, `Params: Algorithm=${algorithm}, Mode=${mode}, Padding=${padding}, Input=${inputFormat}, Output=${outputFormat}`);
+    debugLogger.log(source, `Key: ${'*'.repeat(keyHex.length)}`);
+    if(ivHex) debugLogger.log(source, `IV: ${'*'.repeat(ivHex.length)}`);
+    
     try {
         const key = CryptoJS.enc.Hex.parse(keyHex);
         const iv = ivHex ? CryptoJS.enc.Hex.parse(ivHex) : undefined;
 
-        const modeMap = {
-            'ECB': CryptoJS.mode.ECB,
-            'CBC': CryptoJS.mode.CBC,
-        };
-
+        const modeMap = { 'ECB': CryptoJS.mode.ECB, 'CBC': CryptoJS.mode.CBC };
         const paddingMap = {
-            'Pkcs7': CryptoJS.pad.Pkcs7,
-            'NoPadding': CryptoJS.pad.NoPadding,
-            'AnsiX923': CryptoJS.pad.AnsiX923,
-            'Iso10126': CryptoJS.pad.Iso10126,
+            'Pkcs7': CryptoJS.pad.Pkcs7, 'NoPadding': CryptoJS.pad.NoPadding,
+            'AnsiX923': CryptoJS.pad.AnsiX923, 'Iso10126': CryptoJS.pad.Iso10126,
             'ZeroPadding': CryptoJS.pad.ZeroPadding,
         };
 
         const cipher = algorithm === 'AES' ? CryptoJS.AES : CryptoJS.TripleDES;
-        const config = {
-            iv: iv,
-            mode: modeMap[mode],
-            padding: paddingMap[padding],
-        };
+        const config = { iv: iv, mode: modeMap[mode], padding: paddingMap[padding] };
+        debugLogger.log(source, `CryptoJS config prepared.`);
 
         if (action === 'encrypt') {
             const dataToEncrypt = (inputFormat === 'Hex')
                 ? CryptoJS.enc.Hex.parse(data)
-                : data; // Pass string for Utf8
+                : data;
+            debugLogger.log(source, `Encrypting ${inputFormat} data: ${data}`);
 
             const encrypted = cipher.encrypt(dataToEncrypt, key, config);
-            
-            // Always return Hex. Base64 output is removed.
-            return encrypted.ciphertext.toString(CryptoJS.enc.Hex).toUpperCase();
+            const result = encrypted.ciphertext.toString(CryptoJS.enc.Hex).toUpperCase();
+            debugLogger.log(source, `Encryption successful. Hex output: ${result}`);
+            return result;
+
         } else { // decrypt
-             // Input for decryption is now always Hex. Base64 is no longer supported.
             if (inputFormat !== 'Hex') {
                 throw new Error('Decryption input format must be Hex. Base64 is no longer supported for ciphertext.');
             }
+            debugLogger.log(source, `Decrypting Hex data: ${data}`);
             const ciphertext = { ciphertext: CryptoJS.enc.Hex.parse(data) };
             
             const decrypted = cipher.decrypt(ciphertext, key, config);
             
-            // We still use UTF-8 for decoding as it correctly handles ASCII.
-            const outputEncoder = (outputFormat === 'Text')
-                ? CryptoJS.enc.Utf8
-                : CryptoJS.enc.Hex;
+            const outputEncoder = (outputFormat === 'Text') ? CryptoJS.enc.Utf8 : CryptoJS.enc.Hex;
 
             const decryptedText = decrypted.toString(outputEncoder);
 
@@ -368,17 +411,18 @@ export const processData = ({ data, keyHex, ivHex, algorithm, mode, padding, act
                 throw new Error("Decryption resulted in non-printable UTF-8 data. Try decrypting to Hex format instead.");
             }
             
-            // New check: Ensure the output is valid ASCII if requested.
             if (outputFormat === 'Text' && decryptedText) {
                 // eslint-disable-next-line no-control-regex
                 if (/[^\u0000-\u007F]/.test(decryptedText)) {
                     throw new Error("Decryption resulted in non-ASCII characters. The original data may not have been plain ASCII text. Try decrypting to Hex format to view the raw bytes.");
                 }
             }
-            
-            return (outputFormat === 'Hex') ? decryptedText.toUpperCase() : decryptedText;
+            const result = (outputFormat === 'Hex') ? decryptedText.toUpperCase() : decryptedText;
+            debugLogger.log(source, `Decryption successful. ${outputFormat} output: ${result}`);
+            return result;
         }
     } catch (e: any) {
+        debugLogger.log(source, `ERROR: Data processing failed. ${e.message}`);
         console.error('Data processing error:', e);
         if (e.message) {
             throw e;

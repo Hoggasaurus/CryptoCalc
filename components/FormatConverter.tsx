@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import Card from './Card';
 import Button from './Button';
 import { Icon } from './Icon';
+import { debugLogger } from '../services/debugLogger';
 
 // Declare CryptoJS for TypeScript since it's loaded from a script tag
 declare var CryptoJS: any;
@@ -14,9 +15,10 @@ const OutputDisplay: React.FC<{ label: string, value: string }> = ({ label, valu
         if (value) {
             navigator.clipboard.writeText(value);
             setCopied(true);
+            debugLogger.log('FormatConverter', `Copied '${label}' to clipboard.`);
             setTimeout(() => setCopied(false), 2000);
         }
-    }, [value]);
+    }, [value, label]);
 
     return (
         <div>
@@ -50,23 +52,32 @@ const FormatConverter: React.FC = () => {
     const [hexToTextError, setHexToTextError] = useState('');
     
     const handleTextToHex = useCallback(() => {
+        const source = 'TextToHex';
+        debugLogger.log(source, `Attempting to convert text to hex. Input: "${textInput}"`);
         setTextToHexError('');
         if (!textInput) {
             setHexOutput('');
+            debugLogger.log(source, 'Input is empty, clearing output.');
             return;
         }
         try {
             const result = CryptoJS.enc.Utf8.parse(textInput).toString(CryptoJS.enc.Hex).toUpperCase();
             setHexOutput(result);
+            debugLogger.log(source, `SUCCESS. Output: ${result}`);
         } catch (e) {
-            setTextToHexError('Conversion failed. Invalid input text.');
+            const err = 'Conversion failed. Invalid input text.';
+            setTextToHexError(err);
+            debugLogger.log(source, `ERROR: ${err}`);
         }
     }, [textInput]);
 
     const handleHexToText = useCallback(() => {
+        const source = 'HexToText';
+        debugLogger.log(source, `Attempting to convert hex to text. Input: "${hexInput}"`);
         setHexToTextError('');
         if (!hexInput) {
             setTextOutput('');
+            debugLogger.log(source, 'Input is empty, clearing output.');
             return;
         }
         try {
@@ -77,13 +88,17 @@ const FormatConverter: React.FC = () => {
             if (cleanedInput.length % 2 !== 0) {
                 throw new Error('Hex string must have an even number of characters.');
             }
+            debugLogger.log(source, `Cleaned and validated input: ${cleanedInput}`);
             const result = CryptoJS.enc.Hex.parse(cleanedInput).toString(CryptoJS.enc.Utf8);
             if (!result && cleanedInput.length > 0) {
                 throw new Error('Decoded to an empty or non-printable string. Please verify your hex input.');
             }
             setTextOutput(result);
+            debugLogger.log(source, `SUCCESS. Output: "${result}"`);
         } catch (e: any) {
-            setHexToTextError(e.message || 'Conversion failed. Please check your input.');
+            const err = e.message || 'Conversion failed. Please check your input.';
+            setHexToTextError(err);
+            debugLogger.log(source, `ERROR: ${err}`);
         }
     }, [hexInput]);
 
