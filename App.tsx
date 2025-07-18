@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback } from 'react';
 import { KeyComponent } from './types';
 import { generateRandomHex, calculateKcv } from './services/cryptoService';
@@ -177,7 +178,7 @@ const App: React.FC = () => {
               />
               <label htmlFor="debug-toggle" className="text-slate-400 cursor-pointer">Show Debug Log</label>
           </div>
-          <p>Built by a world-class senior frontend React engineer.</p>
+          <p>Built by Chris Hogg</p>
           <p>&copy; {new Date().getFullYear()}. All Rights Reserved.</p>
         </footer>
       </div>

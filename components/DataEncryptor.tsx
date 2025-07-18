@@ -1,10 +1,11 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { DataEncryptionAlgorithm, EncryptionMode, Padding, EncryptionAction, DataFormat } from '../types';
-import { processData, generateRandomHex } from '../services/cryptoService';
+import { processData, generateRandomHex, adjustDesKeyParity } from '../services/cryptoService';
 import Card from './Card';
 import Button from './Button';
 import { Icon } from './Icon';
 import { debugLogger } from '../services/debugLogger';
+import Tooltip from './Tooltip';
 
 const algorithmOptions: { value: DataEncryptionAlgorithm, label: string }[] = [
     { value: 'AES', label: 'AES (Advanced Encryption Standard)' },
@@ -53,10 +54,21 @@ const DataEncryptor: React.FC = () => {
     const [outputText, setOutputText] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const [adjustParity, setAdjustParity] = useState(false);
 
     const needsIV = mode === 'CBC';
 
-    React.useEffect(() => {
+    useEffect(() => {
+        const source = 'DataEncryptor';
+        if (algorithm === '3DES') {
+            setAdjustParity(true);
+            debugLogger.log(source, `Algorithm is 3DES, enabling "Force Odd Parity" by default.`);
+        } else {
+            setAdjustParity(false);
+        }
+    }, [algorithm]);
+
+    useEffect(() => {
         const source = 'DataEncryptor';
         debugLogger.log(source, `Switched to ${action} mode.`);
         if (action === 'encrypt') {
@@ -101,7 +113,15 @@ const DataEncryptor: React.FC = () => {
         setLoading(true);
 
         try {
-            const keyByteLength = keyHex.length / 2;
+            const keyToUse = (algorithm === '3DES' && adjustParity)
+                ? adjustDesKeyParity(keyHex)
+                : keyHex;
+            
+            if (algorithm === '3DES' && adjustParity) {
+                debugLogger.log(source, `Parity adjustment is ON. Original key: ${keyHex.toUpperCase()}, Adjusted key: ${keyToUse}`);
+            }
+
+            const keyByteLength = keyToUse.length / 2;
             if (!keyConfig.lengths.includes(keyByteLength)) {
                 throw new Error(`Invalid key length. For ${algorithm}, key must be ${keyConfig.lengths.join(', ')} bytes long (${keyConfig.lengths.map(b=>b*2).join('/')} hex chars).`);
             }
@@ -118,7 +138,7 @@ const DataEncryptor: React.FC = () => {
 
             const result = processData({
                 data: inputText,
-                keyHex,
+                keyHex: keyToUse,
                 ivHex: needsIV ? ivHex : undefined,
                 algorithm,
                 mode,
@@ -136,7 +156,7 @@ const DataEncryptor: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [action, algorithm, mode, padding, keyHex, ivHex, inputText, keyConfig, needsIV, inputFormat, outputFormat]);
+    }, [action, algorithm, mode, padding, keyHex, ivHex, inputText, keyConfig, needsIV, inputFormat, outputFormat, adjustParity]);
 
     const formatHelperText = useMemo(() => {
         if (action === 'encrypt') {
@@ -178,12 +198,35 @@ const DataEncryptor: React.FC = () => {
                         {modeOptions.find(m => m.value === mode)?.description}
                     </p>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <InputControl label="Key (Hex)" value={keyHex} onChange={e => setKeyHex(e.target.value.replace(/[^0-9a-fA-F]/g, ''))} placeholder={`${keyConfig.lengths.map(b=>b*2).join('/')}-char hex`} onGenerate={() => handleGenerateRandom('key')} />
-                        {needsIV && <InputControl label="IV (Hex)" value={ivHex} onChange={e => setIvHex(e.target.value.replace(/[^0-9a-fA-F]/g, ''))} placeholder={`${keyConfig.ivLength*2}-char hex`} onGenerate={() => handleGenerateRandom('iv')} />}
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <InputControl label="Key (Hex)" value={keyHex} onChange={e => setKeyHex(e.target.value.replace(/[^0-9a-fA-F]/g, ''))} placeholder={`${keyConfig.lengths.map(b=>b*2).join('/')}-char hex`} onGenerate={() => handleGenerateRandom('key')} />
+                            {needsIV && <InputControl label="IV (Hex)" value={ivHex} onChange={e => setIvHex(e.target.value.replace(/[^0-9a-fA-F]/g, ''))} placeholder={`${keyConfig.ivLength*2}-char hex`} onGenerate={() => handleGenerateRandom('iv')} />}
+                        </div>
+                        {algorithm === '3DES' && (
+                            <div className="flex items-center gap-2 -mt-2">
+                                <Tooltip text="Adjusts each byte of the key to have odd parity. Required by some legacy hardware (HSMs) and systems. Most software libraries ignore this.">
+                                    <div className="flex items-center gap-2 cursor-help p-1">
+                                        <input 
+                                            type="checkbox" 
+                                            id="parity-toggle" 
+                                            checked={adjustParity} 
+                                            onChange={(e) => {
+                                                const isChecked = e.target.checked;
+                                                setAdjustParity(isChecked);
+                                                debugLogger.log('DataEncryptor', `Parity adjustment toggled ${isChecked ? 'ON' : 'OFF'}.`);
+                                            }}
+                                            className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-900 cursor-pointer"
+                                        />
+                                        <label htmlFor="parity-toggle" className="text-sm text-slate-400 cursor-pointer select-none">Force Odd Parity</label>
+                                    </div>
+                                </Tooltip>
+                            </div>
+                        )}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-700/50">
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-700/50">
                         <FormatSelector label="Input Format" value={inputFormat} onChange={(f) => {
                             setInputFormat(f);
                             debugLogger.log('DataEncryptor', `Input format changed to ${f}`);

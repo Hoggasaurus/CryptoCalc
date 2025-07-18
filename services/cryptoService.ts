@@ -430,3 +430,52 @@ export const processData = ({ data, keyHex, ivHex, algorithm, mode, padding, act
         throw new Error('An unexpected error occurred during data processing.');
     }
 };
+
+/**
+ * Counts the number of set bits (1s) in a number.
+ * @param n The number to check.
+ * @returns The count of set bits.
+ */
+const countSetBits = (n: number): number => {
+    let count = 0;
+    while (n > 0) {
+        n &= (n - 1);
+        count++;
+    }
+    return count;
+};
+
+/**
+ * Adjusts the parity of a DES/3DES key. Each byte is modified to have odd parity.
+ * This is a requirement for some hardware and legacy systems.
+ * @param keyHex The key as a hex string (16 or 24 bytes).
+ * @returns The parity-adjusted key as a hex string.
+ */
+export const adjustDesKeyParity = (keyHex: string): string => {
+    const source = 'adjustDesKeyParity';
+    debugLogger.log(source, `Request to adjust parity for key: ${keyHex.toUpperCase()}`);
+    if (!keyHex || (keyHex.length !== 32 && keyHex.length !== 48)) {
+        debugLogger.log(source, `Invalid key length (${keyHex.length} chars) for parity adjustment. Returning original key.`);
+        return keyHex;
+    }
+
+    const bytes = [];
+    for (let i = 0; i < keyHex.length; i += 2) {
+        bytes.push(parseInt(keyHex.substr(i, 2), 16));
+    }
+
+    const adjustedBytes = bytes.map((byte, index) => {
+        // Standard DES uses odd parity. If the number of set bits in the byte is even,
+        // we flip the least significant bit (LSB) to make the total number of set bits odd.
+        if (countSetBits(byte) % 2 === 0) {
+            const adjustedByte = byte ^ 0x01; // XOR with 1 flips the LSB
+            debugLogger.log(source, `Byte ${index} (${byte.toString(16).padStart(2,'0')}) has even parity. Adjusting to ${adjustedByte.toString(16).padStart(2,'0')}.`);
+            return adjustedByte;
+        }
+        return byte;
+    });
+
+    const adjustedKeyHex = adjustedBytes.map(byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase();
+    debugLogger.log(source, `Final parity-adjusted key: ${adjustedKeyHex}`);
+    return adjustedKeyHex;
+};
