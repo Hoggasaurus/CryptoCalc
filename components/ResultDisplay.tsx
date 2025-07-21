@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import { Icon } from './Icon';
 
@@ -26,7 +25,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ label, value, size = 'md'
     <div>
       <label className={`block ${textSize} font-medium text-slate-400`}>{label}</label>
       <div className="mt-1 flex items-center gap-2">
-        <div className={`flex-grow p-2 bg-slate-900/70 rounded-md border border-slate-600 font-mono ${valueTextSize}`}>
+        <div className={`flex-grow p-2 bg-slate-900/70 rounded-md border border-slate-600 font-mono ${valueTextSize} break-all min-w-0`}>
           {value || <span className="text-slate-500">N/A</span>}
         </div>
         <button

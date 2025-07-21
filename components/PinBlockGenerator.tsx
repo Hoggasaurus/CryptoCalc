@@ -7,6 +7,7 @@ import ResultDisplay from './ResultDisplay';
 import { Icon } from './Icon';
 import Tooltip from './Tooltip';
 import { debugLogger } from '../services/debugLogger';
+import LuhnCalculator from './LuhnCalculator';
 
 const FormatsInfo: Record<PinBlockFormat, {name: string, description: string}> = {
     [PinBlockFormat.ISO_0]: {
@@ -107,6 +108,32 @@ const PinBlockGenerator: React.FC = () => {
         <div className="max-w-3xl mx-auto">
             <Card title="PIN Block Generator">
                 <div className="p-6 space-y-6">
+                    <div>
+                        <label htmlFor="format-select" className="block text-sm font-medium text-slate-300">
+                            PIN Block Format
+                        </label>
+                        <div className="relative mt-1">
+                            <select
+                                id="format-select"
+                                value={format}
+                                onChange={(e) => {
+                                    const newFormat = e.target.value as PinBlockFormat;
+                                    setFormat(newFormat);
+                                    debugLogger.log('PinBlockGenerator', `Format changed to ${newFormat}.`);
+                                }}
+                                className="w-full appearance-none bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                            >
+                                {Object.entries(FormatsInfo).map(([key, value]) => (
+                                    <option key={key} value={key}>{value.name}</option>
+                                ))}
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+                                <Icon name="chevron-down" />
+                            </div>
+                        </div>
+                         <p className="mt-2 text-xs text-slate-400">{FormatsInfo[format].description}</p>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <label htmlFor="pin-input" className="block text-sm font-medium text-slate-300">
@@ -160,31 +187,6 @@ const PinBlockGenerator: React.FC = () => {
                             </Button>
                         </div>
                     </div>
-                    <div>
-                        <label htmlFor="format-select" className="block text-sm font-medium text-slate-300">
-                            PIN Block Format
-                        </label>
-                        <div className="relative mt-1">
-                            <select
-                                id="format-select"
-                                value={format}
-                                onChange={(e) => {
-                                    const newFormat = e.target.value as PinBlockFormat;
-                                    setFormat(newFormat);
-                                    debugLogger.log('PinBlockGenerator', `Format changed to ${newFormat}.`);
-                                }}
-                                className="w-full appearance-none bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                            >
-                                {Object.entries(FormatsInfo).map(([key, value]) => (
-                                    <option key={key} value={key}>{value.name}</option>
-                                ))}
-                            </select>
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
-                                <Icon name="chevron-down" />
-                            </div>
-                        </div>
-                         <p className="mt-2 text-xs text-slate-400">{FormatsInfo[format].description}</p>
-                    </div>
 
                     {error && <p className="text-sm text-red-400 bg-red-900/20 border border-red-500/30 p-3 rounded-md">{error}</p>}
                     
@@ -208,6 +210,10 @@ const PinBlockGenerator: React.FC = () => {
                            <ResultDisplay label="Final Encrypted PIN Block" value={result.encryptedPinBlock} />
                         )}
                     </div>
+                )}
+
+                {isAES && (
+                    <LuhnCalculator />
                 )}
             </Card>
         </div>

@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { DataEncryptionAlgorithm, EncryptionMode, Padding, EncryptionAction, DataFormat } from '../types';
 import { processData, generateRandomHex, adjustDesKeyParity } from '../services/cryptoService';
@@ -50,7 +51,7 @@ const DataEncryptor: React.FC = () => {
     const [ivHex, setIvHex] = useState('');
     const [inputText, setInputText] = useState('');
     const [inputFormat, setInputFormat] = useState<DataFormat>('Text');
-    const [outputFormat, setOutputFormat] = useState<DataFormat>('Hex');
+    const [outputFormat, setOutputFormat] = useState<DataFormat>('Text');
     const [outputText, setOutputText] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
@@ -73,8 +74,8 @@ const DataEncryptor: React.FC = () => {
         debugLogger.log(source, `Switched to ${action} mode.`);
         if (action === 'encrypt') {
             setInputFormat('Text');
-            setOutputFormat('Hex');
-            debugLogger.log(source, `Set default formats: Input=Text, Output=Hex.`);
+            setOutputFormat('Text'); // Default to Text (Base64) for encryption output
+            debugLogger.log(source, `Set default formats: Input=Text, Output=Text.`);
         } else {
             setInputFormat('Hex');
             setOutputFormat('Text');
@@ -161,10 +162,12 @@ const DataEncryptor: React.FC = () => {
     const formatHelperText = useMemo(() => {
         if (action === 'encrypt') {
             const inputContext = inputFormat === 'Text' ? 'a UTF-8 string' : 'a Hex string';
-            return `Input is treated as ${inputContext}. Encrypted output will be Hex encoded.`;
-        } else {
-            const outputContext = outputFormat === 'Text' ? 'an ASCII string' : 'a Hex string';
-            return `Input must be a Hex-encoded ciphertext. Decrypted output will be ${outputContext}.`;
+            const outputContext = outputFormat === 'Text' ? 'a Base64 encoded string' : 'a Hex string';
+            return `Input is treated as ${inputContext}. Encrypted output will be ${outputContext}.`;
+        } else { // decrypt
+            const inputContext = inputFormat === 'Text' ? 'a Base64 encoded ciphertext' : 'a Hex-encoded ciphertext';
+            const outputContext = outputFormat === 'Text' ? 'an ASCII/UTF-8 string' : 'a Hex string';
+            return `Input is treated as ${inputContext}. Decrypted output will be ${outputContext}.`;
         }
     }, [inputFormat, outputFormat, action]);
 
@@ -230,11 +233,15 @@ const DataEncryptor: React.FC = () => {
                         <FormatSelector label="Input Format" value={inputFormat} onChange={(f) => {
                             setInputFormat(f);
                             debugLogger.log('DataEncryptor', `Input format changed to ${f}`);
-                        }} disabled={action === 'decrypt'} />
-                        <FormatSelector label="Output Format" value={outputFormat} onChange={(f) => {
-                             setOutputFormat(f);
-                             debugLogger.log('DataEncryptor', `Output format changed to ${f}`);
-                        }} disabled={action === 'encrypt'} />
+                        }} />
+                        <FormatSelector
+                            label="Output Format"
+                            value={outputFormat}
+                            onChange={(f) => {
+                                 setOutputFormat(f);
+                                 debugLogger.log('DataEncryptor', `Output format changed to ${f}`);
+                            }}
+                        />
                     </div>
                      <p className="text-xs text-slate-400 -mt-2">{formatHelperText}</p>
 
@@ -281,15 +288,14 @@ const SelectControl: React.FC<{label: string, value: string, onChange: React.Cha
     </div>
 );
 
-const InputControl: React.FC<{label: string, value: string, placeholder: string, onChange: React.ChangeEventHandler<HTMLInputElement>, onGenerate: () => void}> = ({label, value, placeholder, onChange, onGenerate}) => (
+const InputControl: React.FC<{label: string, value: string, onChange: React.ChangeEventHandler<HTMLInputElement>, placeholder: string, onGenerate: () => void}> = ({label, value, onChange, placeholder, onGenerate}) => (
     <div>
         <label className="block text-sm font-medium text-slate-300">{label}</label>
         <div className="mt-1 flex items-stretch gap-2">
-            <input type="text" value={value} onChange={onChange} className="flex-grow w-full bg-slate-700 border border-slate-600 rounded-md shadow-sm py-2 px-3 text-white font-mono focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm" placeholder={placeholder} />
+            <input type="text" value={value} onChange={onChange} placeholder={placeholder} className="flex-grow w-full bg-slate-700 border border-slate-600 rounded-md shadow-sm py-2 px-3 text-white font-mono focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm" />
             <Button onClick={onGenerate} className="!px-3 bg-slate-600 hover:bg-slate-500" title={`Generate random ${label}`}><Icon name="sparkles" className="w-4 h-4" /></Button>
         </div>
     </div>
 );
-
 
 export default DataEncryptor;

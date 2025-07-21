@@ -1,3 +1,5 @@
+
+
 export interface KeyComponent {
   id: string;
   value: string; // Hex encoded
@@ -60,9 +62,61 @@ export type Padding = 'Pkcs7' | 'NoPadding' | 'AnsiX923' | 'Iso10126' | 'ZeroPad
 export type EncryptionAction = 'encrypt' | 'decrypt';
 export type DataFormat = 'Text' | 'Hex';
 
+export interface RsaProcessParams {
+  action: 'encrypt' | 'decrypt';
+  keyPem: string;
+  data: string;
+  inputFormat: DataFormat;
+  outputFormat: DataFormat;
+}
+
 // --- Debug Types ---
 export interface LogEntry {
   timestamp: string;
   source: string;
   message: string;
+}
+
+// --- TR-31 Key Block Parser Types ---
+export interface Tr31Header {
+    versionId: string;
+    keyBlockLength: string;
+    keyUsage: string;
+    algorithm: string;
+    modeOfUse: string;
+    keyVersionNumber: string;
+    exportability: string;
+    numberOfOptionalBlocks: number;
+    reserved: string;
+}
+
+export interface Tr31OptionalBlock {
+    blockId: string;
+    length: number;
+    value: string;
+}
+
+export interface Tr31ParsedBlock {
+    header: Tr31Header;
+    optionalBlocks: Tr31OptionalBlock[];
+    encryptedKey: string;
+    authenticator: string;
+    raw: {
+        header: string;
+        optionalBlocks: string;
+        encryptedKeyAndAuthenticator: string;
+    }
+}
+
+// --- DUKPT Types ---
+export interface DukptKeys {
+    ipek: string;
+    transactionKey: string;
+    pinKey: string;
+    macRequestKey: string; // for generation
+    macResponseKey: string; // for verification
+    dataRequestKey: string; // for encryption
+    dataResponseKey: string; // for decryption
+    ksn: string;
+    counter: string;
 }

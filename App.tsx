@@ -15,8 +15,11 @@ import FormatConverter from './components/FormatConverter';
 import { useDebug } from './contexts/DebugContext';
 import DebugLog from './components/DebugLog';
 import { debugLogger } from './services/debugLogger';
+import KeyBlockParser from './components/KeyBlockParser';
+import CsrDecoder from './components/CsrDecoder';
+import DukptDeriver from './components/DukptDeriver';
 
-type Tab = 'keys' | 'encryption' | 'pinblocks' | 'rsa' | 'converter';
+type Tab = 'keys' | 'encryption' | 'pinblocks' | 'keyblock' | 'rsa' | 'converter' | 'csr' | 'dukpt';
 
 const TabButton: React.FC<{isActive: boolean, onClick: () => void, children: React.ReactNode}> = ({ isActive, onClick, children }) => (
     <button
@@ -78,11 +81,20 @@ const App: React.FC = () => {
             <TabButton isActive={activeTab === 'encryption'} onClick={() => handleTabChange('encryption')}>
                 <Icon name="lock-open" /> Data Encryption
             </TabButton>
+             <TabButton isActive={activeTab === 'csr'} onClick={() => handleTabChange('csr')}>
+                <Icon name="doc-text" /> CSR / Cert Decoder
+            </TabButton>
             <TabButton isActive={activeTab === 'pinblocks'} onClick={() => handleTabChange('pinblocks')}>
                 <Icon name="shield-check" /> PIN Block Generator
             </TabButton>
+            <TabButton isActive={activeTab === 'keyblock'} onClick={() => handleTabChange('keyblock')}>
+                <Icon name="key-block" /> Key Block Parser
+            </TabButton>
+            <TabButton isActive={activeTab === 'dukpt'} onClick={() => handleTabChange('dukpt')}>
+                <Icon name="key-flow" /> DUKPT Deriver
+            </TabButton>
             <TabButton isActive={activeTab === 'rsa'} onClick={() => handleTabChange('rsa')}>
-                <Icon name="lock-closed" /> RSA Key Pair
+                <Icon name="lock-closed" /> RSA Toolkit
             </TabButton>
             <TabButton isActive={activeTab === 'converter'} onClick={() => handleTabChange('converter')}>
                 <Icon name="arrows-right-left" /> Format Converter
@@ -97,22 +109,22 @@ const App: React.FC = () => {
                   <div>
                       <h3 className="text-base font-medium text-slate-300 mb-3">AES Components</h3>
                       <div className="flex flex-wrap gap-4 items-center">
-                          <Button onClick={() => handleGenerateComponent('AES', 16)}><Icon name="sparkles" /> Gen 16-Byte</Button>
-                          <Button onClick={() => handleGenerateComponent('AES', 24)}><Icon name="sparkles" /> Gen 24-Byte</Button>
-                          <Button onClick={() => handleGenerateComponent('AES', 32)}><Icon name="sparkles" /> Gen 32-Byte</Button>
+                          <Tooltip text="128-bit strength">
+                            <Button onClick={() => handleGenerateComponent('AES', 16)}><Icon name="sparkles" /> 16-Byte</Button>
+                          </Tooltip>
+                          <Tooltip text="192-bit strength">
+                            <Button onClick={() => handleGenerateComponent('AES', 24)}><Icon name="sparkles" /> 24-Byte</Button>
+                          </Tooltip>
+                          <Tooltip text="256-bit strength">
+                            <Button onClick={() => handleGenerateComponent('AES', 32)}><Icon name="sparkles" /> 32-Byte</Button>
+                          </Tooltip>
                       </div>
                   </div>
                   <div>
                       <h3 className="text-base font-medium text-slate-300 mb-3">3DES Components</h3>
                       <div className="flex flex-wrap gap-4 items-center">
-                          <Button onClick={() => handleGenerateComponent('3DES', 16)}><Icon name="sparkles" /> Gen 16-Byte</Button>
-                          <Button onClick={() => handleGenerateComponent('3DES', 24)}><Icon name="sparkles" /> Gen 24-Byte</Button>
-                          <Tooltip text="A Key Check Value (KCV) is derived by encrypting a block of nulls with a key and taking the first 3 bytes of the result. For 8-byte 3DES components, the KCV is calculated on a temporary 16-byte key formed by duplicating the component.">
-                              <div className="flex items-center gap-2 text-slate-400 cursor-help">
-                                  <Icon name="info" />
-                                  <span>What is a KCV?</span>
-                              </div>
-                          </Tooltip>
+                          <Button onClick={() => handleGenerateComponent('3DES', 16)}><Icon name="sparkles" /> 16-Byte</Button>
+                          <Button onClick={() => handleGenerateComponent('3DES', 24)}><Icon name="sparkles" /> 24-Byte</Button>
                       </div>
                   </div>
                 </div>
@@ -146,10 +158,28 @@ const App: React.FC = () => {
               <DataEncryptor />
            </main>
         )}
+        
+        {activeTab === 'csr' && (
+           <main className="animate-fade-in">
+              <CsrDecoder />
+           </main>
+        )}
 
         {activeTab === 'pinblocks' && (
            <main className="animate-fade-in">
               <PinBlockGenerator />
+           </main>
+        )}
+
+        {activeTab === 'keyblock' && (
+           <main className="animate-fade-in">
+              <KeyBlockParser />
+           </main>
+        )}
+
+        {activeTab === 'dukpt' && (
+           <main className="animate-fade-in">
+              <DukptDeriver />
            </main>
         )}
 

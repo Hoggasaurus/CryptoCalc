@@ -1,4 +1,6 @@
-import { PinBlockFormat, RsaKeyFormat, RsaKeyPairResult, RsaKeySize, DataEncryptionAlgorithm, EncryptionMode, Padding, EncryptionAction, DataFormat } from '../types';
+
+
+import { PinBlockFormat, RsaKeyFormat, RsaKeyPairResult, RsaKeySize, DataEncryptionAlgorithm, EncryptionMode, Padding, EncryptionAction, DataFormat, Tr31ParsedBlock, Tr31OptionalBlock, Tr31Header, RsaProcessParams, DukptKeys } from '../types';
 import { debugLogger } from './debugLogger';
 
 // This tells TypeScript that CryptoJS is a global variable from the imported script
@@ -287,7 +289,7 @@ const formatAsPem = (base64String: string, type: 'PUBLIC' | 'PRIVATE'): string =
 /**
  * Generates an RSA key pair using the Web Crypto API.
  * @param keySize The size of the key in bits.
- * @param format The desired output format ('pem', 'jwk', or 'der').
+ * @param format The desired output format ('pem', 'jwk', 'der').
  * @returns A promise that resolves to an object containing the keys in the specified format.
  */
 export const generateRsaKeyPair = async (keySize: RsaKeySize, format: RsaKeyFormat): Promise<RsaKeyPairResult> => {
@@ -384,27 +386,31 @@ export const processData = ({ data, keyHex, ivHex, algorithm, mode, padding, act
             const dataToEncrypt = (inputFormat === 'Hex')
                 ? CryptoJS.enc.Hex.parse(data)
                 : data;
-            debugLogger.log(source, `Encrypting ${inputFormat} data: ${data}`);
+            debugLogger.log(source, `Encrypting ${inputFormat} data...`);
 
             const encrypted = cipher.encrypt(dataToEncrypt, key, config);
-            const result = encrypted.ciphertext.toString(CryptoJS.enc.Hex).toUpperCase();
-            debugLogger.log(source, `Encryption successful. Hex output: ${result}`);
+            
+            let result: string;
+            if (outputFormat === 'Hex') {
+                result = encrypted.ciphertext.toString(CryptoJS.enc.Hex).toUpperCase();
+                debugLogger.log(source, `Encryption successful. Hex output: ${result}`);
+            } else { // 'Text' output for encryption will be Base64
+                result = encrypted.toString(); // Default is Base64
+                debugLogger.log(source, `Encryption successful. Base64 (ASCII) output: ${result}`);
+            }
             return result;
 
         } else { // decrypt
-            if (inputFormat !== 'Hex') {
-                throw new Error('Decryption input format must be Hex. Base64 is no longer supported for ciphertext.');
-            }
-            debugLogger.log(source, `Decrypting Hex data: ${data}`);
-            const ciphertext = { ciphertext: CryptoJS.enc.Hex.parse(data) };
+            debugLogger.log(source, `Decrypting ${inputFormat} data...`);
             
-            const decrypted = cipher.decrypt(ciphertext, key, config);
+            const decrypted = (inputFormat === 'Hex')
+                ? cipher.decrypt({ ciphertext: CryptoJS.enc.Hex.parse(data) }, key, config)
+                : cipher.decrypt(data, key, config); // Assumes Base64 for 'Text' input
             
             const outputEncoder = (outputFormat === 'Text') ? CryptoJS.enc.Utf8 : CryptoJS.enc.Hex;
-
             const decryptedText = decrypted.toString(outputEncoder);
 
-            if (decrypted.sigBytes === 0) {
+            if (decrypted.sigBytes === 0 && data.length > 0) {
                  throw new Error("Decryption failed. This is often due to an incorrect key, IV, padding scheme, or data format.");
             }
             if (decrypted.sigBytes > 0 && !decryptedText && outputFormat === 'Text') {
@@ -478,4 +484,461 @@ export const adjustDesKeyParity = (keyHex: string): string => {
     const adjustedKeyHex = adjustedBytes.map(byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase();
     debugLogger.log(source, `Final parity-adjusted key: ${adjustedKeyHex}`);
     return adjustedKeyHex;
+};
+
+/**
+ * Validates a number string using the Luhn algorithm.
+ * @param pan The number string to validate.
+ * @returns true if the number is valid, false otherwise.
+ */
+export const validateLuhn = (pan: string): boolean => {
+    const source = 'validateLuhn';
+    if (!/^\d+$/.test(pan)) {
+        debugLogger.log(source, `Invalid input: contains non-digit characters.`);
+        return false;
+    }
+    
+    let sum = 0;
+    let shouldDouble = false;
+    // Iterate from right to left
+    for (let i = pan.length - 1; i >= 0; i--) {
+        let digit = parseInt(pan.charAt(i), 10);
+
+        if (shouldDouble) {
+            digit *= 2;
+            if (digit > 9) {
+                digit -= 9;
+            }
+        }
+
+        sum += digit;
+        shouldDouble = !shouldDouble;
+    }
+    
+    const isValid = sum % 10 === 0;
+    debugLogger.log(source, `Validating '${pan}'. Sum: ${sum}. Is valid: ${isValid}`);
+    return isValid;
+};
+
+/**
+ * Calculates the Luhn check digit for a base number string.
+ * @param basePan The base number string (without a check digit).
+ * @returns The calculated check digit (0-9).
+ */
+export const calculateLuhnCheckDigit = (basePan: string): number => {
+    const source = 'calculateLuhnCheckDigit';
+    if (!/^\d*$/.test(basePan)) { // Allow empty string
+        debugLogger.log(source, `Invalid input: contains non-digit characters.`);
+        throw new Error('Input must be a string of digits.');
+    }
+    if (basePan.length === 0) {
+      return 0; // Or handle as an error, returning 0 is safe.
+    }
+
+    let sum = 0;
+    // The Luhn algorithm for calculating a check digit requires doubling every second digit
+    // from the right of the base number.
+    let shouldDouble = true; 
+    
+    for (let i = basePan.length - 1; i >= 0; i--) {
+        let digit = parseInt(basePan.charAt(i), 10);
+
+        if (shouldDouble) {
+            digit *= 2;
+            if (digit > 9) {
+                digit -= 9; // This is equivalent to summing the digits of the product (e.g., 16 -> 1+6=7; 16-9=7)
+            }
+        }
+
+        sum += digit;
+        shouldDouble = !shouldDouble;
+    }
+    
+    const checkDigit = (10 - (sum % 10)) % 10;
+    debugLogger.log(source, `Calculating for '${basePan}'. Sum: ${sum}. Check digit: ${checkDigit}`);
+    return checkDigit;
+};
+
+// --- TR-31 Parsing ---
+function hexToAscii(hex: string): string {
+    let str = '';
+    for (let i = 0; i < hex.length; i += 2) {
+        str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+    }
+    return str;
+}
+
+/**
+ * Parses a TR-31 key block from an ASCII string.
+ * @param keyBlockAscii The TR-31 key block as an ASCII string.
+ * @returns A structured object representing the parsed block.
+ */
+export const parseTr31Block = (keyBlockAscii: string): Tr31ParsedBlock => {
+    const source = 'parseTr31Block';
+    debugLogger.log(source, 'Starting TR-31 block parsing.');
+    const cleanedAscii = keyBlockAscii.replace(/\s/g, '').toUpperCase();
+    
+    const headerLength = 16; // Standard TR-31 header is 16 ASCII characters
+    if (cleanedAscii.length < headerLength) {
+        throw new Error(`Invalid TR-31 block. Length must be at least ${headerLength} characters for the header.`);
+    }
+
+    const rawHeader = cleanedAscii.substring(0, headerLength);
+    debugLogger.log(source, `Raw Header: ${rawHeader}`);
+
+    const keyBlockLengthStr = rawHeader.substring(1, 5);
+    const keyBlockLength = parseInt(keyBlockLengthStr, 10);
+
+    if (isNaN(keyBlockLength) || String(keyBlockLength).padStart(4, '0') !== keyBlockLengthStr) {
+        throw new Error(`Invalid key block length in header: ${keyBlockLengthStr}`);
+    }
+    
+    // The length in the header is the length of the entire ASCII string block.
+    if (cleanedAscii.length !== keyBlockLength) {
+        throw new Error(`Key block length mismatch. Header says ${keyBlockLength}, actual length is ${cleanedAscii.length}.`);
+    }
+
+    const header: Tr31Header = {
+        versionId: rawHeader.substring(0, 1),
+        keyBlockLength: keyBlockLengthStr,
+        keyUsage: rawHeader.substring(5, 7),
+        algorithm: rawHeader.substring(7, 8),
+        modeOfUse: rawHeader.substring(8, 9),
+        keyVersionNumber: rawHeader.substring(9, 11),
+        exportability: rawHeader.substring(11, 12),
+        numberOfOptionalBlocks: parseInt(rawHeader.substring(12, 14), 10),
+        reserved: rawHeader.substring(14, 16)
+    };
+    
+    if (isNaN(header.numberOfOptionalBlocks)) {
+        throw new Error(`Invalid number of optional blocks in header: ${rawHeader.substring(12, 14)}`);
+    }
+    
+    debugLogger.log(source, `Parsed header fields: ${JSON.stringify(header)}`);
+    
+    let currentOffset = headerLength;
+    const optionalBlocks: Tr31OptionalBlock[] = [];
+    let rawOptionalBlocksStr = '';
+
+    for (let i = 0; i < header.numberOfOptionalBlocks; i++) {
+        if (currentOffset + 4 > cleanedAscii.length) { // Need at least 2 chars for ID and 2 for length
+            debugLogger.log(source, `Stopping optional block parsing: not enough data for block #${i + 1} header.`);
+            break;
+        }
+        const blockId = cleanedAscii.substring(currentOffset, currentOffset + 2);
+        const blockLengthStr = cleanedAscii.substring(currentOffset + 2, currentOffset + 4);
+        
+        // A valid Block ID is two ASCII uppercase letters or digits.
+        // A valid length is two ASCII digits.
+        if (!/^[A-Z0-9]{2}$/.test(blockId) || !/^\d{2}$/.test(blockLengthStr)) {
+            debugLogger.log(source, `Stopping optional block parsing: found invalid block header (ID: ${blockId}, Len: ${blockLengthStr}). Assuming start of encrypted key data.`);
+            break;
+        }
+
+        const blockLengthBytes = parseInt(blockLengthStr, 10);
+        const blockLengthChars = blockLengthBytes * 2; // Data is hex, so 2 chars per byte
+
+        debugLogger.log(source, `Parsing optional block #${i + 1}: ID=${blockId}, Length=${blockLengthBytes} bytes (${blockLengthChars} chars)`);
+
+        if (currentOffset + 4 + blockLengthChars > cleanedAscii.length) {
+            throw new Error(`Incomplete optional block data for ID ${blockId}. Declared length ${blockLengthBytes} bytes goes past end of key block.`);
+        }
+        const blockValue = cleanedAscii.substring(currentOffset + 4, currentOffset + 4 + blockLengthChars);
+        
+        const optionalBlock: Tr31OptionalBlock = {
+            blockId,
+            length: blockLengthBytes,
+            value: blockValue
+        };
+        optionalBlocks.push(optionalBlock);
+        
+        const fullBlockStr = cleanedAscii.substring(currentOffset, currentOffset + 4 + blockLengthChars);
+        rawOptionalBlocksStr += fullBlockStr;
+
+        currentOffset += (4 + blockLengthChars);
+    }
+    
+    debugLogger.log(source, `Parsed ${optionalBlocks.length} optional blocks.`);
+
+    let authenticatorLengthChars: number;
+    switch (header.versionId) {
+        case 'D':
+            authenticatorLengthChars = 64; // HMAC-SHA-256 (32 bytes)
+            break;
+        case 'C':
+            authenticatorLengthChars = (header.algorithm === 'A') ? 32 : 16; // CMAC with AES (16 bytes) or TDEA (8 bytes)
+            break;
+        default: // Covers 'A', 'B' and any other custom/older versions
+            authenticatorLengthChars = 16; // TDEA-MAC (8 bytes)
+            break;
+    }
+
+    debugLogger.log(source, `Using authenticator length of ${authenticatorLengthChars} chars for version ${header.versionId} and algorithm ${header.algorithm}.`);
+
+    const remainingLength = cleanedAscii.length - currentOffset;
+    if (remainingLength < authenticatorLengthChars) {
+        throw new Error('Not enough data for encrypted key and authenticator.');
+    }
+
+    const encryptedKeyAndAuthenticator = cleanedAscii.substring(currentOffset);
+    const encryptedKey = encryptedKeyAndAuthenticator.substring(0, encryptedKeyAndAuthenticator.length - authenticatorLengthChars);
+    const authenticator = encryptedKeyAndAuthenticator.substring(encryptedKeyAndAuthenticator.length - authenticatorLengthChars);
+    
+    if (encryptedKey.length === 0) {
+         debugLogger.log(source, `WARNING: Encrypted key part is empty. This is valid for key blocks that only transport metadata.`);
+    } else if ((encryptedKey.length % 2) !== 0) {
+        throw new Error(`Invalid encrypted key length. Must be an even number of hex characters, but got ${encryptedKey.length}.`);
+    }
+
+    const result: Tr31ParsedBlock = {
+        header,
+        optionalBlocks,
+        encryptedKey,
+        authenticator,
+        raw: {
+            header: rawHeader,
+            optionalBlocks: rawOptionalBlocksStr,
+            encryptedKeyAndAuthenticator
+        }
+    };
+
+    return result;
+};
+
+// --- RSA Encryption/Decryption ---
+
+const stringToArrayBuffer = (str: string): ArrayBuffer => new TextEncoder().encode(str).buffer;
+const arrayBufferToString = (buffer: ArrayBuffer): string => new TextDecoder().decode(buffer);
+const hexToArrayBuffer = (hex: string): ArrayBuffer => {
+    const cleanedHex = hex.replace(/\s/g, '');
+    const bytes = new Uint8Array(cleanedHex.length / 2);
+    for (let i = 0; i < cleanedHex.length; i += 2) {
+        bytes[i / 2] = parseInt(cleanedHex.substr(i, 2), 16);
+    }
+    return bytes.buffer;
+};
+const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
+    const byteString = window.atob(b64);
+    const bytes = new Uint8Array(byteString.length);
+    for (let i = 0; i < byteString.length; i++) {
+        bytes[i] = byteString.charCodeAt(i);
+    }
+    return bytes.buffer;
+};
+
+// Helper to import a PEM key (PKCS#8 or SPKI)
+async function importRsaKey(pem: string, isPublic: boolean): Promise<CryptoKey> {
+    const source = 'importRsaKey';
+    const pemHeader = isPublic ? '-----BEGIN PUBLIC KEY-----' : '-----BEGIN PRIVATE KEY-----';
+    const pemFooter = isPublic ? '-----END PUBLIC KEY-----' : '-----END PRIVATE KEY-----';
+    
+    const trimmedPem = pem.trim();
+
+    if (!trimmedPem.startsWith(pemHeader)) {
+        throw new Error(`Invalid PEM format. Expected key to start with ${pemHeader}`);
+    }
+    
+    if (!trimmedPem.endsWith(pemFooter)) {
+        throw new Error(`Invalid PEM format. Expected key to end with ${pemFooter}`);
+    }
+
+    // Extract base64 content between header and footer
+    const pemContents = trimmedPem.substring(pemHeader.length, trimmedPem.lastIndexOf(pemFooter));
+    
+    // Remove all whitespace (including newlines) from the base64 content
+    const base64 = pemContents.replace(/\s/g, '');
+    
+    if (!base64) {
+        throw new Error('PEM content is empty. The key appears to be missing its data.');
+    }
+
+    const binaryDer = base64ToArrayBuffer(base64);
+    
+    debugLogger.log(source, `Importing ${isPublic ? 'Public' : 'Private'} key using RSA-OAEP / SHA-256.`);
+    return window.crypto.subtle.importKey(
+        isPublic ? 'spki' : 'pkcs8',
+        binaryDer,
+        { name: 'RSA-OAEP', hash: 'SHA-256' },
+        true,
+        isPublic ? ['encrypt'] : ['decrypt']
+    );
+}
+
+/**
+ * Encrypts or decrypts data using RSA-OAEP with the Web Crypto API.
+ * @param params The parameters for the operation.
+ * @returns The processed data as a string in the specified output format.
+ */
+export const processRsaData = async ({ action, keyPem, data, inputFormat, outputFormat }: RsaProcessParams): Promise<string> => {
+    const source = 'processRsaData';
+    debugLogger.log(source, `Starting RSA ${action} process.`);
+    try {
+        const isPublic = action === 'encrypt';
+        const cryptoKey = await importRsaKey(keyPem, isPublic);
+
+        let dataBuffer: ArrayBuffer;
+        if (inputFormat === 'Text') {
+            dataBuffer = (action === 'encrypt')
+                ? stringToArrayBuffer(data) // Plaintext is UTF-8
+                : base64ToArrayBuffer(data); // Ciphertext is Base64
+            debugLogger.log(source, `Converted ${inputFormat} input to ArrayBuffer.`);
+        } else { // Hex
+            dataBuffer = hexToArrayBuffer(data);
+            debugLogger.log(source, `Converted Hex input to ArrayBuffer.`);
+        }
+
+        if (action === 'encrypt') {
+            debugLogger.log(source, 'Encrypting data with public key...');
+            const encryptedBuffer = await window.crypto.subtle.encrypt(
+                { name: 'RSA-OAEP' },
+                cryptoKey,
+                dataBuffer
+            );
+            debugLogger.log(source, 'Encryption successful.');
+            return outputFormat === 'Hex' ? arrayBufferToHex(encryptedBuffer) : arrayBufferToBase64(encryptedBuffer);
+        } else { // decrypt
+            debugLogger.log(source, 'Decrypting data with private key...');
+            const decryptedBuffer = await window.crypto.subtle.decrypt(
+                { name: 'RSA-OAEP' },
+                cryptoKey,
+                dataBuffer
+            );
+            debugLogger.log(source, 'Decryption successful.');
+            return outputFormat === 'Hex' ? arrayBufferToHex(decryptedBuffer) : arrayBufferToString(decryptedBuffer);
+        }
+
+    } catch (e: any) {
+        debugLogger.log(source, `ERROR: RSA process failed. ${e.message}`);
+        console.error('RSA process error:', e);
+        if(e.message.includes('decryption failed')) {
+            throw new Error('Decryption failed. This is typically due to an incorrect private key or malformed ciphertext.');
+        }
+        if(e.message.includes('Key unusable')) {
+            throw new Error('Key is unusable for this operation. Ensure you are using a public key to encrypt and a private key to decrypt.');
+        }
+        throw new Error(e.message || 'An unexpected error occurred during RSA processing.');
+    }
+};
+
+// --- DUKPT Derivation ---
+
+const tdesEncrypt = (keyHex: string, dataHex: string): string => {
+    const key = CryptoJS.enc.Hex.parse(keyHex);
+    const data = CryptoJS.enc.Hex.parse(dataHex);
+    const encrypted = CryptoJS.TripleDES.encrypt(data, key, {
+        mode: CryptoJS.mode.ECB,
+        padding: CryptoJS.pad.NoPadding
+    });
+    return encrypted.ciphertext.toString(CryptoJS.enc.Hex).toUpperCase();
+};
+
+const BDK_MOD_VECTOR = 'C0C0C0C000000000C0C0C0C000000000';
+// ANSI X9.24-1-2009 variants for session key derivation
+const PIN_VARIANT_VECTOR =         '000000000000000000000000000000F0';
+const MAC_REQUEST_VARIANT_VECTOR = '0000000000000000FFFFFFFF00000000';
+const MAC_RESPONSE_VARIANT_VECTOR ='000000000000000000000000FFFFFFFF';
+const DATA_REQUEST_VARIANT_VECTOR ='00000000FFFFFFFF0000000000000000';
+const DATA_RESPONSE_VARIANT_VECTOR='0000000000000000FFFFFFFFFFFFFFFF';
+
+const getIpek = (bdkHex: string, ksnHex: string): string => {
+    const source = 'Dukpt.getIpek';
+    debugLogger.log(source, `Deriving IPEK from BDK and KSN.`);
+
+    // Take right-most 8 bytes of KSN, with counter part cleared (which is already done when calling this)
+    const ksnForIpek = ksnHex.substring(ksnHex.length - 16);
+    debugLogger.log(source, `KSN portion for IPEK derivation: ${ksnForIpek}`);
+
+    // Encrypt the KSN portion with the BDK
+    const ipekLeft = tdesEncrypt(bdkHex, ksnForIpek);
+    debugLogger.log(source, `IPEK Left half: ${ipekLeft}`);
+
+    // Create the modified BDK by XORing with a constant
+    const bdkMod = xorHexStrings([bdkHex, BDK_MOD_VECTOR.substring(0, bdkHex.length)]);
+    
+    // Encrypt the KSN portion with the modified BDK
+    const ipekRight = tdesEncrypt(bdkMod, ksnForIpek);
+    debugLogger.log(source, `IPEK Right half: ${ipekRight}`);
+
+    return ipekLeft + ipekRight;
+};
+
+export const deriveDukptKeys = (bdkHex: string, ksnHex: string): DukptKeys => {
+    const source = 'deriveDukptKeys';
+    debugLogger.log(source, `--- Starting DUKPT Derivation ---`);
+    debugLogger.log(source, `BDK: ${'*'.repeat(bdkHex.length)}, KSN: ${ksnHex}`);
+
+    if (bdkHex.length !== 32 && bdkHex.length !== 48) {
+        throw new Error('BDK must be a 16-byte (32 hex chars) or 24-byte (48 hex chars) key.');
+    }
+    if (ksnHex.length !== 20) {
+        throw new Error('KSN must be a 10-byte (20 hex chars) value.');
+    }
+
+    const ksnBigInt = BigInt('0x' + ksnHex);
+    const counterBigInt = ksnBigInt & 0x1FFFFFn;
+    const counterHex = counterBigInt.toString(16).padStart(6, '0').toUpperCase();
+    
+    const ksnWithoutCounter = ksnBigInt & ~0x1FFFFFn;
+    const ipek = getIpek(bdkHex, ksnWithoutCounter.toString(16).padStart(20, '0'));
+    debugLogger.log(source, `Derived IPEK: ${ipek}`);
+
+    let currentKey = ipek;
+    let shiftRegister = ksnWithoutCounter;
+
+    for (let i = 0; i < 21; i++) {
+        if ((counterBigInt >> BigInt(i)) & 1n) {
+            const bit = 1n << BigInt(i);
+            shiftRegister |= bit;
+            const ksnPortion = (shiftRegister & 0xFFFFFFFFFFFFFFFFFFFFn).toString(16).padStart(20, '0').substring(4, 20);
+            
+            // --- Future Key Derivation Step ---
+            // This is one step of the non-reversible key generation process as per ANSI X9.24-1
+            
+            // Derive the left half of the new key
+            const keyRight = currentKey.substring(16, 32);
+            const msg = xorHexStrings([ksnPortion, keyRight]);
+            let newKeyLeft = tdesEncrypt(currentKey.substring(0, 16), msg);
+            newKeyLeft = xorHexStrings([newKeyLeft, keyRight]);
+            
+            // Derive the right half of the new key
+            const keyMod = xorHexStrings([currentKey, BDK_MOD_VECTOR]);
+            const keyLeftMod = keyMod.substring(0, 16);
+            const keyRightMod = keyMod.substring(16, 32);
+            
+            const msg2 = xorHexStrings([ksnPortion, keyRightMod]);
+            let newKeyRight = tdesEncrypt(keyLeftMod, msg2);
+            newKeyRight = xorHexStrings([newKeyRight, keyRightMod]);
+            
+            currentKey = newKeyLeft + newKeyRight;
+        }
+    }
+    debugLogger.log(source, `Derived Transaction Key: ${currentKey}`);
+    
+    const transactionKey = currentKey;
+    const pinKey = xorHexStrings([transactionKey, PIN_VARIANT_VECTOR]);
+    debugLogger.log(source, `Derived PIN Key: ${pinKey}`);
+    
+    const macRequestKey = xorHexStrings([transactionKey, MAC_REQUEST_VARIANT_VECTOR]);
+    debugLogger.log(source, `Derived MAC Request Key (Generation): ${macRequestKey}`);
+
+    const macResponseKey = xorHexStrings([transactionKey, MAC_RESPONSE_VARIANT_VECTOR]);
+    debugLogger.log(source, `Derived MAC Response Key (Verification): ${macResponseKey}`);
+
+    const dataRequestKey = xorHexStrings([transactionKey, DATA_REQUEST_VARIANT_VECTOR]);
+    debugLogger.log(source, `Derived Data Request Key (Encryption): ${dataRequestKey}`);
+    
+    const dataResponseKey = xorHexStrings([transactionKey, DATA_RESPONSE_VARIANT_VECTOR]);
+    debugLogger.log(source, `Derived Data Response Key (Decryption): ${dataResponseKey}`);
+
+    return {
+        ipek,
+        transactionKey,
+        pinKey,
+        macRequestKey,
+        macResponseKey,
+        dataRequestKey,
+        dataResponseKey,
+        ksn: ksnHex.toUpperCase(),
+        counter: counterHex
+    };
 };
